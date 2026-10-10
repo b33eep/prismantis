@@ -64,6 +64,7 @@ For LaTeX math, install RaTeX's renderer and set `latex` to `true`; see [LaTeX m
 | [Tables](#tables) | colored headers, rules, column alignment, colored numbers, sized to the terminal |
 | [Code](#code) | a language header and copy button, Prism highlighting in two dozen languages, shell lines colored like a prompt |
 | [Diagrams and charts](#diagrams-and-charts) | flowcharts, sequence, state, class and ER diagrams, bar and line charts, one color per box, participant and bar |
+| [Figures](#figures) | ` ```figure ` text pictures drawn as written in the theme's colors, for timelines, layouts and before and after; checked before they are drawn |
 | [LaTeX math](#latex-math) | `$$` and ` ```math ` formulas typeset as images in kitty and Ghostty by [RaTeX](https://github.com/erweixin/RaTeX), text everywhere else |
 | [Layout](#layout) | back-to-back tables and diagrams sit side by side and wrap on narrow terminals |
 | [Copy buttons](#copy-buttons) | `⧉ md`, `⧉ art` and `⧉ html` on tables, `[ ⧉ copy ]` on code, lists and quotes, `/prismantis copy` without a mouse |
@@ -124,6 +125,24 @@ Code blocks tagged `mermaid` draw as colored text art:
 
 Diagrams too wide for the window, or over 80 lines, stay as code. `mermaidAscii` swaps box-drawing characters for `+ - |`. Pie charts are not supported.
 
+### Figures
+
+Some things read better as a picture than as a diagram: a timeout racing a retry, the layout of a screen, a system before and after a change. Code blocks tagged `figure` draw line by line as written, in the theme's colors:
+
+````markdown
+```figure
+{note:          0 s         10 s  12 s            later}
+Provider  {accent:●───────────}{warn:✗ timeout}             {accent:●} retry, same event
+Handler   {ok:■■■■■■■■■■■■■■■■■■} 200 into the void
+Booked    0                 {ok:1}               {warn:2} twice
+```
+````
+
+- `{role:text}` colors a run: `accent` for frames, lines and arrows (diagram color), `warn` for the break or the risk, `ok` for what is healthy or done, `note` for time and effort (heading color), `dim` for side notes, `strong` for the one thing that matters; the rest takes the diagram text color
+- ▶ and ◀ draw as ► and ◄, as in diagrams, so no glyph turns into an emoji; in `mono`, `warn` draws bold
+- a figure stays a code block while it streams, when it has more than 80 lines, when a line is wider than the window or than 100 columns, and when it would not draw cleanly: a frame that does not close or whose side slips out of its column, a glyph that may draw as an emoji or takes two columns, a tab, or role markup in the wrong case, misspelled, nested or left open
+- `⧉ source` copies the block, `⧉ art` the drawn text
+
 ### LaTeX math
 
 ![LaTeX math: plain Claude Code on the left, prismantis on the right](docs/compare/latex.png)
@@ -147,7 +166,7 @@ Formula text matches the reply text. A terminal image fills whole rows, so a for
 
 ![Layout: plain Claude Code on the left, prismantis on the right](docs/compare/layout.png)
 
-When tables and diagrams follow each other, they share a row and wrap once the terminal runs out of width. A wide terminal shows a table, a flowchart and two charts side by side.
+When tables, diagrams and figures follow each other, they share a row and wrap once the terminal runs out of width. A wide terminal shows a table, a flowchart and two charts side by side.
 
 ### Copy buttons
 
@@ -155,7 +174,7 @@ When tables and diagrams follow each other, they share a row and wrap once the t
 
 - **Tables:** `⧉ md` copies the original Markdown and `⧉ art` a boxed table that pastes well into Slack. `⧉ html` copies a formatted table (headers, alignment, inline formatting) plus a tab-separated plain-text copy.
 - **Code, lists and quotes:** `[ ⧉ copy ]` on each. Code copies without its fences, lists as markdown, quotes without their `> ` markers.
-- **Diagrams:** `⧉ source` copies the mermaid code, `⧉ art` the drawn art.
+- **Diagrams and figures:** `⧉ source` copies the mermaid or figure source, `⧉ art` the drawn art.
 - **Whole replies:** replies with more than one block, or any Hebrew or Arabic, end with `⧉ copy reply`, which copies the reply as Claude wrote it. Selecting right-to-left text on screen copies letters in drawn order, not reading order.
 - **No mouse:** `/prismantis copy` copies the last reply, `/prismantis copy code` its last code block.
 
@@ -288,15 +307,15 @@ A color is hex (`#a6e3a1`, `#fc0`), `rgb(166,227,161)`, `ansi256(114)` or a name
 | Token | Colors |
 | --- | --- |
 | `accent` | reply bullet, H3+ headings, quote bar, running tool dots |
-| `heading` | H1 and H2 |
-| `strong` | **bold** text |
+| `heading` | H1 and H2, `note` in figures |
+| `strong` | **bold** text, `strong` in figures |
 | `emphasis` | *italic* text, variables, attribute names |
 | `inlineCode` | `inline code` |
 | `codeText` | code block text |
 | `codeCommand` | shell commands, functions, class names, keys |
-| `codeFlag` | `--flags`, keywords, failures |
-| `codeString` | strings |
-| `codeComment` | comments, the code block's language label |
+| `codeFlag` | `--flags`, keywords, failures, `warn` in figures |
+| `codeString` | strings, `ok` in figures |
+| `codeComment` | comments, the code block's language label, `dim` in figures |
 | `link` | links, URLs, properties, tags |
 | `path` | file paths, regexes |
 | `number` | numbers, versions, durations, done dots |
@@ -305,13 +324,14 @@ A color is hex (`#a6e3a1`, `#fc0`), `rgb(166,227,161)`, `ansi256(114)` or a name
 | `tableHeader` | table header cells |
 | `tableRule` | table rules |
 | `bullet` | list bullets and numbers |
-| `diagram` | diagram lines |
-| `diagramText` | diagram labels and LaTeX formulas |
+| `diagram` | diagram lines, `accent` in figures |
+| `diagramText` | diagram labels, LaTeX formulas and figure text |
 
 ## Troubleshooting
 
 - **A setting or update didn't take:** run `/reload`. A session keeps what it loaded.
 - **A diagram shows as code:** its source is over 80 lines or 8,000 characters, it's wider than the window, it doesn't parse, or `mermaid` is off. Widen the terminal or split the diagram.
+- **A figure shows as code:** it is still streaming, it has more than 80 lines, a line is wider than the window or than 100 columns, or it would not draw cleanly (see [Figures](#figures)). Widen the terminal, or ask Claude to fix the frame or glyph.
 - **No `⧉ html` on tables:** you're over SSH, in the desktop app or VS Code, or on Linux with no graphical session. `⧉ md` and `⧉ art` still work.
 - **`⧉ html` copied plain text only:** CopyQ isn't running, or the clipboard helper failed. The toast says why.
 - **Clicking a copy button selects the word "copy":** your terminal copies on select. Use `/prismantis copy`.

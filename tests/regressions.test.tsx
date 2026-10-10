@@ -390,8 +390,9 @@ test('the help screen draws as command output', async $ => {
 
 test('drawn replies add no emoji-capable glyphs', async $ => {
   const text = ['sequenceDiagram\n  A->>B: go\n  B-->>A: ok', 'classDiagram\n  direction LR\n  A <|-- B\n  C --> D', 'graph RL\n  A-->B'].map(d => '```mermaid\n' + d + '\n```').join('\n\n')
+  const figure = ['```figure', 'a {accent:──▶} b {accent:◀──} c', '```'].join('\n')
   for (const surface of ['terminal', 'desktop'] as const) {
-    const ui = await $.ui.mount({ ...mount(text), surface })
+    const ui = await $.ui.mount({ ...mount(`${text}\n\n${figure}`), surface })
     expect((await ui.find({ type: 'Text', text: /\p{Extended_Pictographic}/u }))?.text).toBeUndefined()
     await ui.unmount()
   }

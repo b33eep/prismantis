@@ -7,6 +7,7 @@ import type { Block } from './markdown'
 import { parse } from './markdown'
 import type { ClipboardBackend } from './clipboard'
 import { clipboardCommand } from './clipboard'
+import { drawFigure, isFigureLang } from './figure'
 import { boxArt, mermaidText, shortenEdgeLabels, unsupportedKind } from './mermaid'
 import type { Drawn, Fold } from './render'
 import { isReadOnlyCall, remember, rememberCall, renderBlocks, renderDiffCard, renderExpandedShell, renderFailure, renderShellResult, renderToolGroup, renderToolRow, renderTurnDuration, renderUserPrompt, width } from './render'
@@ -250,6 +251,11 @@ const drawMarkdown = ($: EngineInterface, el: ReturnType<EngineInterface['ui']['
         drawn.set(i, { note: kind ? `${kind} diagrams draw as source for now` : narrowest === Infinity ? 'diagram failed to render' : `diagram is ${narrowest} cols, terminal is ${columns}` })
       }
     }
+  }
+  for (const [i, block] of blocks.entries()) {
+    if (block.kind !== 'code' || !isFigureLang(block.lang)) continue
+    const figure = drawFigure(el, style, block, columns, `b${i}`)
+    if (figure) drawn.set(i, figure)
   }
   const Image = 'Image' in el ? el.Image : null
   if (Image) {

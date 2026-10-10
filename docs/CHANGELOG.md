@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Figures: code blocks tagged `figure` draw line by line as written, colored by role markup such as `{warn:timeout}`, for what reads better as a picture than as a diagram (a timeout racing a retry, a screen layout, before and after). Roles map to the existing color slots, so themes and color overrides apply, and `warn` draws bold where `codeFlag` has no color (`mono`). A figure stays a code block while it streams, when it has more than 80 lines, when it is wider than the window, or when a frame would not close, a side slips out of its column, a glyph may draw as an emoji or takes two columns, or role markup is wrong.
+
 ## [0.15.0] - 2026-10-10
 
 ### Added

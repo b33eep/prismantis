@@ -1,6 +1,8 @@
+import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { FIGURE_MAX_COLUMNS, checkFigure, figureRuns, figureText, isFigureLang } from '../hooks/figure'
+import { FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, checkFigure, figureRuns, figureText, isFigureLang } from '../hooks/figure'
+import { PRESETS } from '../hooks/presets'
 
 const lines = (text: string) => text.split('\n')
 
@@ -167,4 +169,102 @@ test('blank lines after a picture do not open its boxes', () => {
 test('findings come sorted by line', () => {
   const findings = checkFigure(lines('┌────┐\n│ a   │\n└────┘\n⚠'))
   expect(findings.map(finding => finding.line)).toEqual([2, 4])
+})
+
+const engine = (on: On) =>
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>engine</Text>
+  })
+
+const reply = (text: string, surface: 'terminal' | 'desktop' = 'terminal', columns = 120) => ({
+  plugin: 'prismantis',
+  surface,
+  component: 'AssistantMessage' as const,
+  props: { text, isFirstOfReply: true },
+  viewport: { columns, rows: 40 },
+})
+
+const ROLES = ['```figure', '{accent:┌──┐} plain {warn:break}', '{ok:done} {note:10 s} {dim:aside} {strong:key}', '```'].join('\n')
+
+for (const theme of ['catppuccin-mocha', 'github-light'] as const) {
+  test(`a figure draws each role in its ${theme} color on terminal and desktop`, { options: { theme } }, async ($, on) => {
+    engine(on)
+    const colors = PRESETS[theme]
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const ui = await $.ui.mount(reply(ROLES, surface))
+      const colorOf = async (text: RegExp) => (await ui.find({ type: 'Text', text }))?.props
+      expect((await colorOf(/^┌──┐$/))?.color).toBe(colors.diagram)
+      expect((await colorOf(/^ plain $/))?.color).toBe(colors.diagramText)
+      expect((await colorOf(/^break$/))?.color).toBe(colors.codeFlag)
+      expect((await colorOf(/^done$/))?.color).toBe(colors.codeString)
+      expect((await colorOf(/^10 s$/))?.color).toBe(colors.heading)
+      expect((await colorOf(/^aside$/))?.color).toBe(colors.codeComment)
+      expect((await colorOf(/^key$/))?.color).toBe(colors.strong)
+      expect((await colorOf(/^key$/))?.bold).toBe(true)
+      expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+      await ui.unmount()
+    }
+  })
+}
+
+test('a figure offers its source and its drawn text as copies', async ($, on) => {
+  engine(on)
+  const ui = await $.ui.mount(reply(ROLES))
+  const labels = (await ui.findAll({ type: 'Button' })).map(button => button.props.label)
+  expect(labels).toContain('⧉ source')
+  expect(labels).toContain('⧉ art')
+  await ui.unmount()
+})
+
+test('a figure with a finding stays a code block', async ($, on) => {
+  engine(on)
+  const ui = await $.ui.mount(reply(['```figure', '┌────────┐', '│ v1.4.2  │', '└────────┘', '```'].join('\n')))
+  expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a figure wider than the terminal stays a code block', async ($, on) => {
+  engine(on)
+  const ui = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(70)}}`, '```'].join('\n'), 'terminal', 60))
+  expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('a figure still streaming stays a code block until its fence closes', async ($, on) => {
+  engine(on)
+  const open = await $.ui.mount(reply(['```figure', '{ok:done} a'].join('\n')))
+  expect(await open.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+  await open.unmount()
+  const closed = await $.ui.mount(reply(['```figure', '{ok:done} a', '```'].join('\n')))
+  expect(await closed.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+  await closed.unmount()
+})
+
+test(`a figure over ${FIGURE_MAX_LINES} lines stays a code block`, async ($, on) => {
+  engine(on)
+  const figure = (count: number) => ['```figure', ...Array.from({ length: count }, (_, i) => `row ${i}`), '```'].join('\n')
+  const long = await $.ui.mount(reply(figure(FIGURE_MAX_LINES + 1)))
+  expect(await long.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+  await long.unmount()
+  const fits = await $.ui.mount(reply(figure(FIGURE_MAX_LINES)))
+  expect(await fits.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+  await fits.unmount()
+})
+
+test('in a theme without colors, warn draws bold and dim draws dimmed', { options: { theme: 'mono' } }, async ($, on) => {
+  engine(on)
+  const ui = await $.ui.mount(reply(ROLES))
+  expect((await ui.find({ type: 'Text', text: /^break$/ }))?.props.bold).toBe(true)
+  expect((await ui.find({ type: 'Text', text: /^aside$/ }))?.props.dimColor).toBe(true)
+  await ui.unmount()
+})
+
+test('blank lines around a figure are not drawn, blank lines inside are', async ($, on) => {
+  engine(on)
+  const ui = await $.ui.mount(reply(['```figure', '', '{ok:a}', '', 'b', '', '```'].join('\n')))
+  const figure = (await ui.findAll({ type: 'Box' })).find(box => box.props.paddingLeft === 2)
+  expect(figure?.children?.length).toBe(3)
+  expect(figure?.text).toBe('a b')
+  await ui.unmount()
 })

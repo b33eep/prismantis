@@ -1,4 +1,7 @@
+import type { ElementTable, RenderElement } from 'claude-code'
+
 import { cells, graphemes, width } from './render'
+import type { Style, Theme } from './theme'
 
 export const FIGURE_ROLES = ['accent', 'warn', 'ok', 'note', 'dim', 'strong'] as const
 
@@ -10,9 +13,12 @@ export type FigureFinding = { line: number; message: string }
 
 export const FIGURE_MAX_COLUMNS = 100
 
+export const FIGURE_MAX_LINES = 80
+
 const MARKUP = new RegExp(`\\{(${FIGURE_ROLES.join('|')}):([^{}]*)\\}`, 'g')
 const MARKER = /\{([A-Za-z][\w-]*):/g
 const TEXT_FORMS: Record<string, string> = { '▶': '►', '◀': '◄' }
+const ROLE_TOKENS: Record<FigureRole, keyof Theme> = { accent: 'diagram', warn: 'codeFlag', ok: 'codeString', note: 'heading', dim: 'codeComment', strong: 'strong' }
 const EMOJI_CAPABLE = /\p{Extended_Pictographic}/u
 const FRAME_GLYPH = /[─-╿]/
 const TOP_LEFT = '┌╔╭┏'
@@ -134,4 +140,41 @@ const withoutTrailingBlanks = (lines: readonly string[]): readonly string[] => {
 export const checkFigure = (lines: readonly string[]): FigureFinding[] => {
   const perLine = lines.flatMap((line, index) => lineMessages(line).map(message => ({ line: index + 1, message })))
   return [...perLine, ...boxFindings(withoutTrailingBlanks(lines))].sort((a, b) => a.line - b.line)
+}
+
+const withoutBlankEdges = (lines: readonly string[]): readonly string[] => {
+  const start = lines.findIndex(line => line.trim())
+  return start < 0 ? [] : withoutTrailingBlanks(lines.slice(start))
+}
+
+const runColor = (style: Style, role: FigureRole | undefined): string | undefined => style.theme[role ? ROLE_TOKENS[role] : 'diagramText']
+
+const isBold = (style: Style, role: FigureRole | undefined): boolean => role === 'strong' || (role === 'warn' && !style.theme.codeFlag)
+
+const figureElement = ({ Box, Text }: ElementTable, style: Style, lines: readonly string[], key: string): RenderElement => (
+  <Box key={key} flexDirection="column" paddingLeft={2}>
+    {lines.map((line, i) => {
+      const runs = figureRuns(line)
+      return (
+        <Text key={`${key}.${i}`}>
+          {runs.length
+            ? runs.map((run, r) => (
+                <Text key={`r${r}`} color={runColor(style, run.role)} bold={isBold(style, run.role)} dimColor={run.role === 'dim' && !style.theme.codeComment}>
+                  {run.text}
+                </Text>
+              ))
+            : ' '}
+        </Text>
+      )
+    })}
+  </Box>
+)
+
+export const drawFigure = (el: ElementTable, style: Style, block: { lines: readonly string[]; isOpen?: true }, columns: number, key: string): { element: RenderElement; art: string } | null => {
+  if (block.isOpen) return null
+  const lines = withoutBlankEdges(block.lines)
+  if (lines.length === 0 || lines.length > FIGURE_MAX_LINES || checkFigure(lines).length > 0) return null
+  const texts = lines.map(figureText)
+  if (texts.some(text => width(text) > columns - 2)) return null
+  return { element: figureElement(el, style, lines, key), art: texts.join('\n') }
 }
