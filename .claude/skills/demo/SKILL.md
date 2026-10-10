@@ -19,6 +19,7 @@ The visual test. Unit tests prove the tree; this proves the look.
    - code blocks with a language header and no frame, and Prism colors in the TypeScript block
    - path, link and inline-code colors, the quote bar, and the green `Tip` alert box
    - accent `⧉ md`, `⧉ art` and `⧉ html` buttons on the table (`⧉ html` in a local macOS or Linux terminal only), and an accent `[ ⧉ copy ]` button on every diagram, the list, the shell block, the alert and the quote
+   - the timeline figure: drawn line by line with no `── figure` header, lines and dots in the diagram color, `✗ timeout` and `2 twice` in the flag color, the bar in the string color, the time labels in the heading color, `⧉ source` and `⧉ art` above it
    - the Hebrew section: lines read right to left (the first bullet shows `eu-west` and `us-east` after the Hebrew, mirrored parentheses), bullets and `1.` on the right, the quote bar on the right, the table cells right aligned, and the shell comment reversed while `ls -la` stays
 4. **Fix what looks wrong**, then run the demo again.
 5. **Keep it current.** A new feature adds a line to `docs/demo.md` and to the checklist above. All data stays invented and neutral.

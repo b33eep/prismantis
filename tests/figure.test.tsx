@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { FIGURE_CHECK_TOOL, FIGURE_GLYPHS, FIGURE_HINT, FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, FIGURE_ROLES, FIGURE_SAFE_COLUMNS, checkFigure, figureRuns, figureText, isFigureLang, reviewFigure } from '../hooks/figure'
+import { FIGURE_CHECK_TOOL, FIGURE_GLYPHS, FIGURE_HINT, FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, FIGURE_ROLES, FIGURE_SAFE_COLUMNS, checkFigure, figureReport, figureRuns, figureText, isFigureLang, reviewFigure } from '../hooks/figure'
 import { PRESETS } from '../hooks/presets'
 import { width } from '../hooks/render'
 import { resolveStyle } from '../hooks/theme'
@@ -470,3 +470,61 @@ test('blank lines around a figure are not drawn, blank lines inside are', async 
     await ui.unmount()
   }
 })
+
+test('control characters and direction marks are found, they would not draw as written', () => {
+  expect(checkFigure(['a\u001b[31mb'])).toEqual([{ line: 1, message: 'control character, use plain text' }])
+  expect(checkFigure(['a\u202eb'])).toEqual([{ line: 1, message: 'direction mark, use plain text' }])
+  expect(checkFigure(['a\u2066b\u2069'])).toEqual([{ line: 1, message: 'direction mark, use plain text' }])
+})
+
+test('a finding lists at most eight glyphs and the report at most twenty findings', () => {
+  const wide = '一二三四五六七八九十'
+  expect(checkFigure([wide]).map(finding => finding.message)).toContain('"一", "二", "三", "四", "五", "六", "七", "八" and 2 more take two columns, use one-column glyphs')
+  const report = figureReport(Array.from({ length: 25 }, (_, i) => ({ line: i + 1, message: 'tab, use spaces' })))
+  expect(report.split('\n').length).toBe(21)
+  expect(report.split('\n').at(-1)).toBe('and 5 more findings')
+})
+
+test('a review of a huge input answers at once without checking it', () => {
+  const started = Date.now()
+  expect(reviewFigure('x'.repeat(200_000))).toEqual([{ line: 1, message: '200000 characters, at most 16000, pass one figure block' }])
+  expect(Date.now() - started).toBeLessThan(200)
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`a figure that stays code says why in a dim line on ${surface}`, async ($, on) => {
+    engine(on)
+    const finding = await $.ui.mount(reply(['```figure', '┌────────┐', '│ v1.4.2  │', '└────────┘', '```'].join('\n'), surface))
+    expect(await finding.find({ type: 'Text', text: /^figure line 2: right side of the box from line 1 slips out of column 10$/ })).toBeDefined()
+    await finding.unmount()
+    const wide = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(70)}}`, '```'].join('\n'), surface, 60))
+    expect(await wide.find({ type: 'Text', text: /^figure is 70 cols, terminal is \d+$/ })).toBeDefined()
+    await wide.unmount()
+    const long = await $.ui.mount(reply(['```figure', ...Array.from({ length: FIGURE_MAX_LINES + 1 }, (_, i) => `row ${i}`), '```'].join('\n'), surface))
+    expect(await long.find({ type: 'Text', text: new RegExp(`^figure has ${FIGURE_MAX_LINES + 1} lines, at most ${FIGURE_MAX_LINES}$`) })).toBeDefined()
+    await long.unmount()
+  })
+
+  test(`a figure with a line far too long stays code at once on ${surface}`, async ($, on) => {
+    engine(on)
+    const started = Date.now()
+    const ui = await $.ui.mount(reply(['```figure', '┌'.repeat(50_000), '```'].join('\n'), surface))
+    expect(Date.now() - started).toBeLessThan(1000)
+    expect(await ui.find({ type: 'Text', text: /^figure line 1 is 50000 characters long$/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test(`the art copy of a figure is its drawn text, without markup or tool-call residue, on ${surface}`, async ($, on) => {
+    engine(on)
+    const copied: string[] = []
+    on('ui.copy', (_, e) => {
+      copied.push(e.text)
+      return { value: { isCopied: true as const } }
+    })
+    const ui = await $.ui.mount(reply(['```figure', '{accent:┌──┐} plain {warn:break}', `{ok:done}${closing('parameter')}`, '```'].join('\n'), surface))
+    const art = (await ui.findAll({ type: 'Button' })).find(button => button.props.label === '⧉ art')
+    await ui.press({ key: art!.key! })
+    expect(copied).toEqual(['┌──┐ plain break\ndone'])
+    await ui.unmount()
+  })
+}

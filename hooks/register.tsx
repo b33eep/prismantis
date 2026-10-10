@@ -55,7 +55,7 @@ const applyRtl = async ($: EngineInterface, style: Style): Promise<Terminal | nu
   return terminal
 }
 
-type FigureTool = { enabled: boolean; registered?: Promise<boolean> }
+type FigureTool = { enabled: boolean; name?: string; registered?: Promise<boolean> }
 
 const figureCheck = ($: EngineInterface, tool: FigureTool): Promise<boolean> => {
   if (!tool.enabled) return Promise.resolve(false)
@@ -67,7 +67,10 @@ const figureCheck = ($: EngineInterface, tool: FigureTool): Promise<boolean> => 
       isDeferred: false,
     })
     .then(
-      () => true,
+      registered => {
+        tool.name = registered.tool
+        return true
+      },
       () => {
         tool.registered = undefined
         return false
@@ -352,7 +355,8 @@ export const register: Register = (on, options) => {
     return started
   })
 
-  on('tool.call', { tool: new RegExp(`^mcp__prismantis__${FIGURE_CHECK_TOOL}$`) }, (_, e) => {
+  on('tool.call', { tool: new RegExp(`^mcp__.+__${FIGURE_CHECK_TOOL}$`) }, (_, e, next) => {
+    if (figureTool.name && e.tool !== figureTool.name) return next(e)
     const figure = (e as { figure?: unknown }).figure
     return { result: figureReport(reviewFigure(typeof figure === 'string' ? figure : '')) }
   }).catch(() => ({ result: 'the check failed, reply with the figure as it is' }))

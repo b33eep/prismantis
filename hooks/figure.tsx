@@ -1,6 +1,6 @@
 import type { ElementTable, RenderElement } from 'claude-code'
 
-import { cells, graphemes, width } from './render'
+import { cells, graphemes, remember, width } from './render'
 import type { Style, Theme } from './theme'
 
 export const FIGURE_ROLES = ['accent', 'warn', 'ok', 'note', 'dim', 'strong'] as const
@@ -16,6 +16,14 @@ export const FIGURE_MAX_COLUMNS = 100
 export const FIGURE_MAX_LINES = 80
 
 export const FIGURE_SAFE_COLUMNS = 74
+
+const RAW_MAX_LINE = FIGURE_MAX_COLUMNS * 4
+
+const REVIEW_MAX_CHARS = 16_000
+
+const LISTED_GLYPHS = 8
+
+const REPORTED_FINDINGS = 20
 
 export const FIGURE_GLYPHS = '─│┌┐└┘├┤┬┴┼═║→←►◄▲▼✓✗●○■□·'
 
@@ -44,6 +52,8 @@ const MARKER = /\{([A-Za-z][\w-]*):/g
 const TEXT_FORMS: Record<string, string> = { '▶': '►', '◀': '◄' }
 const ROLE_TOKENS: Record<FigureRole, keyof Theme> = { accent: 'diagram', warn: 'codeFlag', ok: 'codeString', note: 'heading', dim: 'codeComment', strong: 'strong' }
 const EMOJI_CAPABLE = /\p{Extended_Pictographic}/u
+const CONTROL = /[\0-\x08\x0b-\x1f\x7f-\x9f]/
+const DIRECTION_MARK = /[\u202a-\u202e\u2066-\u2069]/
 const FRAME_GLYPH = /[─-╿]/
 const TOP_LEFT = '┌╔╭┏'
 const TOP_RIGHT = '┐╗╮┓'
@@ -82,24 +92,28 @@ const swapsTwoLetters = (name: string, role: string): boolean => {
   return differ.length === 2 && second === first + 1 && name[first] === role[second] && name[second] === role[first]
 }
 
-const markupMessage = (line: string, marker: RegExpExecArray, drawn: ReadonlySet<number>): string | undefined => {
+const markupMessage = (line: string, marker: RegExpExecArray, drawn: ReadonlySet<number>, lastClose: number): string | undefined => {
   const [written, name = ''] = marker
   if (drawn.has(marker.index)) return undefined
   const lower = name.toLowerCase()
   const role = FIGURE_ROLES.find(candidate => candidate === lower || swapsTwoLetters(lower, candidate))
   if (!role) return undefined
   if (name !== role) return `"${written}" is not a role, roles are ${FIGURE_ROLES.join(', ')} in lower case`
-  const rest = line.slice(marker.index + written.length)
-  if (!rest.includes('}')) return `"${written}" is not closed, end it with }`
+  if (lastClose < marker.index + written.length) return `"${written}" is not closed, end it with }`
   return `"${written}" holds braces, markup does not nest`
 }
 
 const markupMessages = (line: string): string[] => {
   const drawn = new Set([...line.matchAll(MARKUP)].map(match => match.index))
-  return [...line.matchAll(MARKER)].flatMap(marker => markupMessage(line, marker, drawn) ?? [])
+  const lastClose = line.lastIndexOf('}')
+  return [...line.matchAll(MARKER)].flatMap(marker => markupMessage(line, marker, drawn, lastClose) ?? [])
 }
 
-const quoted = (glyphs: readonly string[]): string => [...new Set(glyphs)].map(glyph => `"${glyph}"`).join(', ')
+const quoted = (glyphs: readonly string[]): string => {
+  const distinct = [...new Set(glyphs)]
+  const listed = distinct.slice(0, LISTED_GLYPHS).map(glyph => `"${glyph}"`).join(', ')
+  return distinct.length > LISTED_GLYPHS ? `${listed} and ${distinct.length - LISTED_GLYPHS} more` : listed
+}
 
 const lineMessages = (line: string, maxColumns: number): string[] => {
   const text = figureText(line)
@@ -110,6 +124,8 @@ const lineMessages = (line: string, maxColumns: number): string[] => {
   return [
     ...(columns > maxColumns ? [`${columns} columns wide, at most ${maxColumns}`] : []),
     ...(text.includes('\t') ? ['tab, use spaces'] : []),
+    ...(CONTROL.test(text) ? ['control character, use plain text'] : []),
+    ...(DIRECTION_MARK.test(text) ? ['direction mark, use plain text'] : []),
     ...(emoji.length ? [`${quoted(emoji)} may draw as an emoji, use a text glyph`] : []),
     ...(wide.length ? [`${quoted(wide)} take two columns, use one-column glyphs`] : []),
     ...markupMessages(line),
@@ -198,6 +214,7 @@ const withoutFences = (source: readonly string[]): readonly string[] => {
 }
 
 export const reviewFigure = (source: string): FigureFinding[] => {
+  if (source.length > REVIEW_MAX_CHARS) return [{ line: 1, message: `${source.length} characters, at most ${REVIEW_MAX_CHARS}, pass one figure block` }]
   const lines = withoutToolCallResidue(withoutFences(source.split(/\r?\n/)))
   if (lines.length === 0) return [{ line: 1, message: 'no lines, pass the lines of one figure block' }]
   const tooLong = lines.length > FIGURE_MAX_LINES ? [{ line: FIGURE_MAX_LINES + 1, message: `${lines.length} lines, at most ${FIGURE_MAX_LINES}` }] : []
@@ -210,8 +227,11 @@ export const FIGURE_CHECK_DESCRIPTION = `Checks one figure block, role markup in
 
 export const FIGURE_CHECK_HINT = `If your reply has a figure block, call the ${FIGURE_CHECK_TOOL} tool with each one before you send it, fix what it reports and check once more.`
 
-export const figureReport = (findings: readonly FigureFinding[]): string =>
-  findings.length ? findings.map(finding => `line ${finding.line}: ${finding.message}`).join('\n') : 'clean, it draws as a picture'
+export const figureReport = (findings: readonly FigureFinding[]): string => {
+  if (!findings.length) return 'clean, it draws as a picture'
+  const lines = findings.slice(0, REPORTED_FINDINGS).map(finding => `line ${finding.line}: ${finding.message}`)
+  return findings.length > REPORTED_FINDINGS ? [...lines, `and ${findings.length - REPORTED_FINDINGS} more findings`].join('\n') : lines.join('\n')
+}
 
 const runColor = (style: Style, role: FigureRole | undefined): string | undefined => style.theme[role ? ROLE_TOKENS[role] : 'diagramText']
 
@@ -236,11 +256,27 @@ const figureElement = ({ Box, Text }: ElementTable, style: Style, lines: readonl
   </Box>
 )
 
-export const drawFigure = (el: ElementTable, style: Style, block: { lines: readonly string[]; isOpen?: true }, columns: number, key: string): { element: RenderElement; art: string } | null => {
-  if (block.isOpen) return null
-  const lines = withoutToolCallResidue(withoutBlankEdges(block.lines))
-  if (lines.length === 0 || lines.length > FIGURE_MAX_LINES || checkFigure(lines).length > 0) return null
+type FigureDecision = { lines: readonly string[]; texts: readonly string[]; widest: number } | { note: string }
+
+const decisions = new Map<string, FigureDecision>()
+
+const decide = (raw: readonly string[]): FigureDecision => {
+  const tooLong = raw.findIndex(line => line.length > RAW_MAX_LINE)
+  if (tooLong >= 0) return { note: `figure line ${tooLong + 1} is ${raw[tooLong]!.length} characters long` }
+  if (raw.length > FIGURE_MAX_LINES * 2) return { note: `figure has ${raw.length} lines, at most ${FIGURE_MAX_LINES}` }
+  const lines = withoutToolCallResidue(withoutBlankEdges(raw))
+  if (lines.length > FIGURE_MAX_LINES) return { note: `figure has ${lines.length} lines, at most ${FIGURE_MAX_LINES}` }
+  const [finding] = checkFigure(lines)
+  if (finding) return { note: `figure line ${finding.line}: ${finding.message}` }
   const texts = lines.map(figureText)
-  if (texts.some(text => width(text) > columns - 2)) return null
-  return { element: figureElement(el, style, lines, key), art: texts.join('\n') }
+  return { lines, texts, widest: Math.max(0, ...texts.map(width)) }
+}
+
+export const drawFigure = (el: ElementTable, style: Style, block: { lines: readonly string[]; isOpen?: true }, columns: number, key: string): { element?: RenderElement; art?: string; note?: string } | null => {
+  if (block.isOpen) return null
+  const decision = remember(decisions, block.lines.join('\n'), () => decide(block.lines))
+  if ('note' in decision) return decision
+  if (decision.lines.length === 0) return null
+  if (decision.widest > columns - 2) return { note: `figure is ${decision.widest} cols, terminal is ${columns}` }
+  return { element: figureElement(el, style, decision.lines, key), art: decision.texts.join('\n') }
 }
