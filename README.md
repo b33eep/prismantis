@@ -138,7 +138,7 @@ Booked    0                 {ok:1}               {warn:2} twice
 ```
 ````
 
-- `{role:text}` colors a run: `accent` for frames, lines and arrows (diagram color), `warn` for the break or the risk, `ok` for what is healthy or done, `note` for time and effort (heading color), `dim` for side notes, `strong` for the one thing that matters; the rest takes the diagram text color
+- `{role:text}` colors a run: `accent` for frames, lines and arrows (diagram color), `warn` for the break or the risk, `ok` for what is healthy or done, `note` for time and effort, `dim` for side notes (comment color), `strong` for the one thing that matters (strong color); the rest takes the diagram text color. `warn`, `ok` and `note` take the theme's reddest, greenest and most amber accent color, each a different one and none the diagram color, so a risk never looks like a frame line in any theme; with your own non-hex colors they fall back to the flag, string and heading colors
 - ▶ and ◀ draw as ► and ◄, as in diagrams, so no glyph turns into an emoji; in `mono`, `warn` draws bold
 - a figure stays a code block while it streams (so a reply that opens with a figure shows its markup until the block closes), when it has more than 80 lines, when a line is wider than the window or than 100 columns, and when it would not draw cleanly: a frame that does not close or whose side slips out of its column, a glyph that may draw as an emoji or takes two columns, a tab, a control character or direction mark, or role markup in the wrong case, misspelled, nested or left open; once the block is closed, a dim line above it says why, such as `figure line 4: right side of the box from line 2 slips out of column 31`
 - a closing tag of a tool call that Claude copied onto the end of the last line, such as `</parameter>`, is dropped from the drawing, the `⧉ art` copy and the check, while `⧉ source` copies the block as written
@@ -311,14 +311,14 @@ A color is hex (`#a6e3a1`, `#fc0`), `rgb(166,227,161)`, `ansi256(114)` or a name
 | Token | Colors |
 | --- | --- |
 | `accent` | reply bullet, H3+ headings, quote bar, running tool dots |
-| `heading` | H1 and H2, `note` in figures |
+| `heading` | H1 and H2 |
 | `strong` | **bold** text, `strong` in figures |
 | `emphasis` | *italic* text, variables, attribute names |
 | `inlineCode` | `inline code` |
 | `codeText` | code block text |
 | `codeCommand` | shell commands, functions, class names, keys |
-| `codeFlag` | `--flags`, keywords, failures, `warn` in figures |
-| `codeString` | strings, `ok` in figures |
+| `codeFlag` | `--flags`, keywords, failures |
+| `codeString` | strings |
 | `codeComment` | comments, the code block's language label, `dim` in figures |
 | `link` | links, URLs, properties, tags |
 | `path` | file paths, regexes |

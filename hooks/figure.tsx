@@ -233,9 +233,55 @@ export const figureReport = (findings: readonly FigureFinding[]): string => {
   return findings.length > REPORTED_FINDINGS ? [...lines, `and ${findings.length - REPORTED_FINDINGS} more findings`].join('\n') : lines.join('\n')
 }
 
-const runColor = (style: Style, role: FigureRole | undefined): string | undefined => style.theme[role ? ROLE_TOKENS[role] : 'diagramText']
+const ROLE_HUES = { warn: 0, ok: 120, note: 45 } as const
 
-const isBold = (style: Style, role: FigureRole | undefined): boolean => role === 'strong' || (role === 'warn' && !style.theme.codeFlag)
+type HuedRole = keyof typeof ROLE_HUES
+
+const INK: readonly (keyof Theme)[] = ['accent', 'heading', 'tableHeader', 'emphasis', 'inlineCode', 'codeCommand', 'codeFlag', 'codeString', 'link', 'path', 'number', 'bullet', 'quote']
+
+const HEX = /^#(?:[0-9a-f]{3}){1,2}$/i
+
+const hueOf = (hex: string): { hue: number; saturation: number } => {
+  const full = hex.length === 4 ? [...hex.slice(1)].map(digit => digit + digit).join('') : hex.slice(1)
+  const [r = 0, g = 0, b = 0] = [0, 2, 4].map(at => parseInt(full.slice(at, at + 2), 16) / 255)
+  const max = Math.max(r, g, b)
+  const spread = max - Math.min(r, g, b)
+  const lightness = (max + max - spread) / 2
+  const saturation = spread === 0 ? 0 : spread / (1 - Math.abs(2 * lightness - 1))
+  const sector = spread === 0 ? 0 : max === r ? ((g - b) / spread) % 6 : max === g ? (b - r) / spread + 2 : (r - g) / spread + 4
+  return { hue: (sector * 60 + 360) % 360, saturation }
+}
+
+const hueDistance = (a: number, b: number): number => Math.min(Math.abs(a - b), 360 - Math.abs(a - b))
+
+const pickedRoles = new WeakMap<Theme, Partial<Record<HuedRole, string>>>()
+
+export const figureRoleColors = (theme: Theme): Partial<Record<HuedRole, string>> => {
+  const known = pickedRoles.get(theme)
+  if (known) return known
+  const inks = [...new Set(INK.map(token => theme[token]).filter((color): color is string => color !== undefined && HEX.test(color)))]
+    .map(color => ({ color, ...hueOf(color) }))
+    .filter(ink => ink.saturation > 0.15)
+  const taken = new Set([theme.diagram])
+  const picked: Partial<Record<HuedRole, string>> = {}
+  for (const role of Object.keys(ROLE_HUES) as HuedRole[]) {
+    const [best] = inks.filter(ink => !taken.has(ink.color)).sort((a, b) => hueDistance(a.hue, ROLE_HUES[role]) - hueDistance(b.hue, ROLE_HUES[role]))
+    if (!best) continue
+    picked[role] = best.color
+    taken.add(best.color)
+  }
+  pickedRoles.set(theme, picked)
+  return picked
+}
+
+const isHued = (role: FigureRole): role is HuedRole => role in ROLE_HUES
+
+const runColor = (style: Style, role: FigureRole | undefined): string | undefined => {
+  if (!role) return style.theme.diagramText
+  return (isHued(role) ? figureRoleColors(style.theme)[role] : undefined) ?? style.theme[ROLE_TOKENS[role]]
+}
+
+const isBold = (style: Style, role: FigureRole | undefined): boolean => role === 'strong' || (role === 'warn' && !runColor(style, 'warn'))
 
 const figureElement = ({ Box, Text }: ElementTable, style: Style, lines: readonly string[], key: string): RenderElement => (
   <Box key={key} flexDirection="column" paddingLeft={2}>

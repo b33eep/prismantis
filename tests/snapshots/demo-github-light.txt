@@ -695,7 +695,7 @@
   <Box>
     <Box>
       <Text>
-        <Text color=#0550ae>
+        <Text color=#953800>
           "          0 s         10 s  12 s            later"
       <Text>
         <Text color=#1f2328>
@@ -713,14 +713,14 @@
       <Text>
         <Text color=#1f2328>
           "Handler   "
-        <Text color=#0a3069>
+        <Text color=#116329>
           "■■■■■■■■■■■■■■■■■■"
         <Text color=#1f2328>
           " 200 into the void"
       <Text>
         <Text color=#1f2328>
           "Booked    0                 "
-        <Text color=#0a3069>
+        <Text color=#116329>
           "1"
         <Text color=#1f2328>
           "               "

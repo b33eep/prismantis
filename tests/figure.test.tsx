@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { FIGURE_CHECK_TOOL, FIGURE_GLYPHS, FIGURE_HINT, FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, FIGURE_ROLES, FIGURE_SAFE_COLUMNS, checkFigure, figureReport, figureRuns, figureText, isFigureLang, reviewFigure } from '../hooks/figure'
+import { FIGURE_CHECK_TOOL, FIGURE_GLYPHS, FIGURE_HINT, FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, FIGURE_ROLES, FIGURE_SAFE_COLUMNS, checkFigure, figureReport, figureRoleColors, figureRuns, figureText, isFigureLang, reviewFigure } from '../hooks/figure'
 import { PRESETS } from '../hooks/presets'
 import { width } from '../hooks/render'
 import { resolveStyle } from '../hooks/theme'
@@ -225,6 +225,11 @@ const reply = (text: string, surface: 'terminal' | 'desktop' = 'terminal', colum
 
 const ROLES = ['```figure', '{accent:┌──┐} plain {warn:break}', '{ok:done} {note:10 s} {dim:aside} {strong:key}', '```'].join('\n')
 
+const EXPECTED_ROLES = {
+  'catppuccin-mocha': { warn: '#f38ba8', ok: '#a6e3a1', note: '#f9e2af' },
+  'github-light': { warn: '#cf222e', ok: '#116329', note: '#953800' },
+} as const
+
 for (const theme of ['catppuccin-mocha', 'github-light'] as const) {
   test(`a figure draws each role in its ${theme} color on terminal and desktop`, { options: { theme } }, async ($, on) => {
     engine(on)
@@ -234,9 +239,9 @@ for (const theme of ['catppuccin-mocha', 'github-light'] as const) {
       const colorOf = async (text: RegExp) => (await ui.find({ type: 'Text', text }))?.props
       expect((await colorOf(/^┌──┐$/))?.color).toBe(colors.diagram)
       expect((await colorOf(/^ plain $/))?.color).toBe(colors.diagramText)
-      expect((await colorOf(/^break$/))?.color).toBe(colors.codeFlag)
-      expect((await colorOf(/^done$/))?.color).toBe(colors.codeString)
-      expect((await colorOf(/^10 s$/))?.color).toBe(colors.heading)
+      expect((await colorOf(/^break$/))?.color).toBe(EXPECTED_ROLES[theme].warn)
+      expect((await colorOf(/^done$/))?.color).toBe(EXPECTED_ROLES[theme].ok)
+      expect((await colorOf(/^10 s$/))?.color).toBe(EXPECTED_ROLES[theme].note)
       expect((await colorOf(/^aside$/))?.color).toBe(colors.codeComment)
       expect((await colorOf(/^key$/))?.color).toBe(colors.strong)
       expect((await colorOf(/^key$/))?.bold).toBe(true)
@@ -245,6 +250,37 @@ for (const theme of ['catppuccin-mocha', 'github-light'] as const) {
     }
   })
 }
+
+const hueOf = (hex: string): number => {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number]
+  const max = Math.max(r, g, b)
+  const d = max - Math.min(r, g, b)
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  return (h * 60 + 360) % 360
+}
+
+const away = (a: number, b: number): number => Math.min(Math.abs(a - b), 360 - Math.abs(a - b))
+
+test('in every preset with colors, warn, ok, note and accent differ, warn leans red and ok leans green', () => {
+  for (const [name, theme] of Object.entries(PRESETS)) {
+    if (name === 'mono') continue
+    const roles = figureRoleColors(theme)
+    const colors = [theme.diagram, roles.warn, roles.ok, roles.note]
+    expect(colors.every(color => typeof color === 'string')).toBe(true)
+    expect(new Set(colors).size).toBe(4)
+    expect(away(hueOf(roles.warn!), 0)).toBeLessThan(45)
+    expect(away(hueOf(roles.ok!), 120)).toBeLessThan(75)
+  }
+})
+
+test('no role takes the diagram color, even when it is the reddest in the theme', () => {
+  const theme = { diagram: '#e06c75', accent: '#e06c75', codeFlag: '#d19a66', codeString: '#98c379', heading: '#e5c07b' }
+  expect(figureRoleColors(theme)).toEqual({ warn: '#d19a66', ok: '#98c379', note: '#e5c07b' })
+})
+
+test('a theme without hex colors keeps the role tokens it had', () => {
+  expect(figureRoleColors({ codeFlag: 'red', codeString: 'green', heading: 'yellow', diagram: 'blue' })).toEqual({})
+})
 
 const CHECK = `mcp__prismantis__${FIGURE_CHECK_TOOL}`
 
