@@ -1,9 +1,10 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { FIGURE_GLYPHS, FIGURE_HINT, FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, FIGURE_ROLES, FIGURE_SAFE_COLUMNS, checkFigure, figureRuns, figureText, isFigureLang } from '../hooks/figure'
+import { FIGURE_CHECK_TOOL, FIGURE_GLYPHS, FIGURE_HINT, FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, FIGURE_ROLES, FIGURE_SAFE_COLUMNS, checkFigure, figureRuns, figureText, isFigureLang, reviewFigure } from '../hooks/figure'
 import { PRESETS } from '../hooks/presets'
 import { width } from '../hooks/render'
+import { resolveStyle } from '../hooks/theme'
 
 const lines = (text: string) => text.split('\n')
 
@@ -228,6 +229,60 @@ for (const theme of ['catppuccin-mocha', 'github-light'] as const) {
     }
   })
 }
+
+const CHECK = `mcp__prismantis__${FIGURE_CHECK_TOOL}`
+
+const SLIPPED = ['┌────────┐', '│ v1.4.2  │', '└────────┘'].join('\n')
+
+test('a review of a figure finds what the checker finds, by line', () => {
+  expect(reviewFigure(SLIPPED)).toEqual(checkFigure(lines(SLIPPED)))
+  expect(reviewFigure(SLIPPED)).toEqual([{ line: 2, message: 'right side of the box from line 1 slips out of column 10' }])
+})
+
+test('a review takes the block with or without its fences, as the parser opens them', () => {
+  const expected = reviewFigure(SLIPPED)
+  for (const source of [
+    ['```figure', SLIPPED, '```'].join('\n'),
+    ['```figure', SLIPPED, '```', ''].join('\n'),
+    ['', '```figure', SLIPPED, '```'].join('\n'),
+    ['~~~figure', SLIPPED, '~~~'].join('\n'),
+    ['````Figure title', '', SLIPPED, '````'].join('\n'),
+    ['~~~figure', SLIPPED, '~~~~'].join('\n'),
+    SLIPPED.replaceAll('\n', '\r\n'),
+  ]) expect(reviewFigure(source)).toEqual(expected)
+  expect(reviewFigure(CARDS.join('\r\n'))).toEqual([])
+  expect(reviewFigure(['~~~figure', 'a', '```'].join('\n'))).toEqual([])
+  expect(reviewFigure(['````figure', 'a', '```'].join('\n'))).toEqual([])
+})
+
+test(`a review holds lines to ${FIGURE_SAFE_COLUMNS} columns, so the model fixes the width in one round`, () => {
+  const wide = `{accent:${'─'.repeat(FIGURE_SAFE_COLUMNS + 1)}}`
+  expect(checkFigure([wide])).toEqual([])
+  expect(reviewFigure(wide)).toEqual([{ line: 1, message: `${FIGURE_SAFE_COLUMNS + 1} columns wide, at most ${FIGURE_SAFE_COLUMNS}` }])
+  expect(reviewFigure('x'.repeat(FIGURE_MAX_COLUMNS + 20))).toEqual([{ line: 1, message: `${FIGURE_MAX_COLUMNS + 20} columns wide, at most ${FIGURE_SAFE_COLUMNS}` }])
+})
+
+test(`a review finds a figure over ${FIGURE_MAX_LINES} lines, which stays a code block`, () => {
+  const long = Array.from({ length: FIGURE_MAX_LINES + 1 }, (_, i) => `step ${i}`).join('\n')
+  expect(reviewFigure(long)).toEqual([{ line: FIGURE_MAX_LINES + 1, message: `${FIGURE_MAX_LINES + 1} lines, at most ${FIGURE_MAX_LINES}` }])
+})
+
+test('an empty review asks for the lines of one figure', () => {
+  for (const source of ['  \n', '```figure\n```\n', '']) expect(reviewFigure(source)).toEqual([{ line: 1, message: 'no lines, pass the lines of one figure block' }])
+})
+
+test('figureCheck is off by default and needs the diagram hints', () => {
+  expect(resolveStyle({}).figureCheck).toBe(false)
+  expect(resolveStyle({ figureCheck: true }).figureCheck).toBe(true)
+  expect(resolveStyle({ figureCheck: true, diagramHints: false }).figureCheck).toBe(false)
+  expect(resolveStyle({ figureCheck: true, mermaid: false }).figureCheck).toBe(false)
+})
+
+test('the model checks a figure and reads clean or its findings by line', { options: { figureCheck: true } }, async $ => {
+  expect(await $.tool.call({ tool: CHECK, figure: CARDS.join('\n') } as never)).toMatchObject({ result: 'clean, it draws as a picture' })
+  expect(await $.tool.call({ tool: CHECK, figure: SLIPPED } as never)).toMatchObject({ result: 'line 2: right side of the box from line 1 slips out of column 10' })
+  expect(await $.tool.call({ tool: CHECK } as never)).toMatchObject({ result: 'line 1: no lines, pass the lines of one figure block' })
+})
 
 test('a figure offers its source and its drawn text as copies', async ($, on) => {
   engine(on)

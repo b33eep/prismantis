@@ -28,6 +28,7 @@ export type Style = {
   copyButtons: boolean
   htmlCopy: ClipboardBackend | null
   diagramHints: boolean
+  figureCheck: boolean
   rtl: 'auto' | Terminal | 'off'
   reorder: boolean
   shape: Shape
@@ -56,6 +57,7 @@ export const resolveStyle = (options: PluginOptions): Style => {
     TOKENS.filter(k => isColor(options[`${k}Color`])).map(k => [k, String(options[`${k}Color`]).trim()]),
   )
 
+  const diagramHints = options.diagramHints !== false && options.mermaid !== false
   const rtl = pick(options.rtl, ['auto', 'off', ...(Object.keys(TERMINALS) as Terminal[])], 'auto')
 
   return {
@@ -72,7 +74,8 @@ export const resolveStyle = (options: PluginOptions): Style => {
     mermaidAscii: options.mermaidAscii === true,
     copyButtons: options.copyButtons !== false,
     htmlCopy: null,
-    diagramHints: options.diagramHints !== false && options.mermaid !== false,
+    diagramHints,
+    figureCheck: options.figureCheck === true && diagramHints,
     rtl,
     reorder: rtl !== 'auto' && rtl !== 'off',
     shape: rtl === 'auto' || rtl === 'off' ? 'visual' : TERMINALS[rtl],

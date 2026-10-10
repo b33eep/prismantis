@@ -285,6 +285,12 @@
       "description": "Attach a short note, read by the model and never shown, to each prompt you type, saying tables, code, mermaid diagrams, charts and figures render here, and LaTeX formulas when the renderer runs. About 480 tokens per prompt, about 60 more with LaTeX. Off when mermaid is off.",
       "default": true
     },
+    "figureCheck": {
+      "type": "boolean",
+      "title": "Figure check",
+      "description": "Give Claude a check_figure tool that lists, by line, what would keep a figure from drawing (a frame that does not close, a slipped side, a wide glyph, wrong markup, a line over 74 columns), and ask it to check each figure before it replies. Costs a tool call per figure, about 35 tokens per prompt and about 140 for the tool. Needs diagramHints.",
+      "default": false
+    },
     "latex": {
       "type": "boolean",
       "title": "LaTeX math",

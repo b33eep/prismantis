@@ -7,7 +7,7 @@ import type { Block } from './markdown'
 import { parse } from './markdown'
 import type { ClipboardBackend } from './clipboard'
 import { clipboardCommand } from './clipboard'
-import { FIGURE_HINT, drawFigure, isFigureLang } from './figure'
+import { FIGURE_CHECK_DESCRIPTION, FIGURE_CHECK_HINT, FIGURE_CHECK_TOOL, FIGURE_HINT, drawFigure, figureReport, isFigureLang, reviewFigure } from './figure'
 import { boxArt, mermaidText, shortenEdgeLabels, unsupportedKind } from './mermaid'
 import type { Drawn, Fold } from './render'
 import { isReadOnlyCall, remember, rememberCall, renderBlocks, renderDiffCard, renderExpandedShell, renderFailure, renderShellResult, renderToolGroup, renderToolRow, renderTurnDuration, renderUserPrompt, width } from './render'
@@ -53,6 +53,27 @@ const applyRtl = async ($: EngineInterface, style: Style): Promise<Terminal | nu
   style.reorder = terminal !== null
   if (terminal) style.shape = TERMINALS[terminal]
   return terminal
+}
+
+type FigureTool = { enabled: boolean; registered?: Promise<boolean> }
+
+const figureCheck = ($: EngineInterface, tool: FigureTool): Promise<boolean> => {
+  if (!tool.enabled) return Promise.resolve(false)
+  tool.registered ??= $.tool
+    .register({
+      name: FIGURE_CHECK_TOOL,
+      description: FIGURE_CHECK_DESCRIPTION,
+      inputSchema: { type: 'object', properties: { figure: { type: 'string', description: 'The lines of one figure block, fences optional.' } }, required: ['figure'] },
+      isDeferred: false,
+    })
+    .then(
+      () => true,
+      () => {
+        tool.registered = undefined
+        return false
+      },
+    )
+  return tool.registered
 }
 
 const expandedCalls = new Set<string>()
@@ -318,6 +339,8 @@ export const register: Register = (on, options) => {
     })
   }
 
+  const figureTool: FigureTool = { enabled: style.figureCheck }
+
   on('session.start', async ($, e, next) => {
     terminal = await probe($, style, probes)
     void latexEngine($, latex)
@@ -325,8 +348,14 @@ export const register: Register = (on, options) => {
     await $.command
       .register({ name: 'prismantis', description: 'Switch the prismantis theme, copy the last reply, or show the demo', argumentHint: '[theme [<name> | random] | copy [code] | demo]' })
       .catch(() => undefined)
+    await figureCheck($, figureTool)
     return started
   })
+
+  on('tool.call', { tool: new RegExp(`^mcp__prismantis__${FIGURE_CHECK_TOOL}$`) }, (_, e) => {
+    const figure = (e as { figure?: unknown }).figure
+    return { result: figureReport(reviewFigure(typeof figure === 'string' ? figure : '')) }
+  }).catch(() => ({ result: 'the check failed, reply with the figure as it is' }))
 
   on('command.run', { command: 'prismantis' }, async ($, e) => {
     const [first, second] = e.args.trim().split(/\s+/)
@@ -364,7 +393,7 @@ export const register: Register = (on, options) => {
     terminal = await probe($, style, probes)
     if (!style.diagramHints || (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge')) return next(e)
     void latexEngine($, latex)
-    const hints = [HINT, FIGURE_HINT, ...(latex.ready && !latex.stopped ? [LATEX_HINT] : [])]
+    const hints = [HINT, FIGURE_HINT, ...((await figureCheck($, figureTool)) ? [FIGURE_CHECK_HINT] : []), ...(latex.ready && !latex.stopped ? [LATEX_HINT] : [])]
     return next({ ...e, context: [...(e.context ?? []), ...hints] })
   })
 

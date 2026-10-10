@@ -99,14 +99,14 @@ const markupMessages = (line: string): string[] => {
 
 const quoted = (glyphs: readonly string[]): string => [...new Set(glyphs)].map(glyph => `"${glyph}"`).join(', ')
 
-const lineMessages = (line: string): string[] => {
+const lineMessages = (line: string, maxColumns: number): string[] => {
   const text = figureText(line)
   const glyphs = graphemes(text)
   const emoji = glyphs.filter(glyph => EMOJI_CAPABLE.test(glyph))
   const wide = glyphs.filter(glyph => !EMOJI_CAPABLE.test(glyph) && width(glyph) === 2)
   const columns = width(text)
   return [
-    ...(columns > FIGURE_MAX_COLUMNS ? [`${columns} columns wide, at most ${FIGURE_MAX_COLUMNS}`] : []),
+    ...(columns > maxColumns ? [`${columns} columns wide, at most ${maxColumns}`] : []),
     ...(text.includes('\t') ? ['tab, use spaces'] : []),
     ...(emoji.length ? [`${quoted(emoji)} may draw as an emoji, use a text glyph`] : []),
     ...(wide.length ? [`${quoted(wide)} take two columns, use one-column glyphs`] : []),
@@ -159,8 +159,8 @@ const withoutTrailingBlanks = (lines: readonly string[]): readonly string[] => {
   return lines.slice(0, end)
 }
 
-export const checkFigure = (lines: readonly string[]): FigureFinding[] => {
-  const perLine = lines.flatMap((line, index) => lineMessages(line).map(message => ({ line: index + 1, message })))
+export const checkFigure = (lines: readonly string[], maxColumns = FIGURE_MAX_COLUMNS): FigureFinding[] => {
+  const perLine = lines.flatMap((line, index) => lineMessages(line, maxColumns).map(message => ({ line: index + 1, message })))
   return [...perLine, ...boxFindings(withoutTrailingBlanks(lines))].sort((a, b) => a.line - b.line)
 }
 
@@ -168,6 +168,33 @@ const withoutBlankEdges = (lines: readonly string[]): readonly string[] => {
   const start = lines.findIndex(line => line.trim())
   return start < 0 ? [] : withoutTrailingBlanks(lines.slice(start))
 }
+
+const FENCE_OPEN = /^\s*(`{3,}|~{3,})\s*figure(?![\w+-])/i
+
+const withoutFences = (source: readonly string[]): readonly string[] => {
+  const lines = withoutBlankEdges(source)
+  const fence = FENCE_OPEN.exec(lines[0] ?? '')?.[1]
+  if (!fence) return lines
+  const last = (lines.at(-1) ?? '').trim()
+  const closes = lines.length > 1 && last.length >= fence.length && [...last].every(char => char === fence[0])
+  return withoutBlankEdges(lines.slice(1, closes ? -1 : undefined))
+}
+
+export const reviewFigure = (source: string): FigureFinding[] => {
+  const lines = withoutFences(source.split(/\r?\n/))
+  if (lines.length === 0) return [{ line: 1, message: 'no lines, pass the lines of one figure block' }]
+  const tooLong = lines.length > FIGURE_MAX_LINES ? [{ line: FIGURE_MAX_LINES + 1, message: `${lines.length} lines, at most ${FIGURE_MAX_LINES}` }] : []
+  return [...checkFigure(lines.slice(0, FIGURE_MAX_LINES), FIGURE_SAFE_COLUMNS), ...tooLong].sort((a, b) => a.line - b.line)
+}
+
+export const FIGURE_CHECK_TOOL = 'check_figure'
+
+export const FIGURE_CHECK_DESCRIPTION = `Checks one figure block, role markup included, fences optional, and lists by line (counted from the first non-blank line inside the fence) what would keep it from drawing as a picture: a frame that does not close, a side that slips out of its column, a glyph two columns wide or one that may draw as an emoji, a tab, wrong role markup, a line over ${FIGURE_SAFE_COLUMNS} columns, or more than ${FIGURE_MAX_LINES} lines. Returns "clean" when there is nothing to fix.`
+
+export const FIGURE_CHECK_HINT = `If your reply has a figure block, call the ${FIGURE_CHECK_TOOL} tool with each one before you send it, fix what it reports and check once more.`
+
+export const figureReport = (findings: readonly FigureFinding[]): string =>
+  findings.length ? findings.map(finding => `line ${finding.line}: ${finding.message}`).join('\n') : 'clean, it draws as a picture'
 
 const runColor = (style: Style, role: FigureRole | undefined): string | undefined => style.theme[role ? ROLE_TOKENS[role] : 'diagramText']
 

@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 - Figures: code blocks tagged `figure` draw line by line as written, colored by role markup such as `{warn:timeout}`, for what reads better as a picture than as a diagram (a timeout racing a retry, a screen layout, before and after). Roles map to the existing color slots, so themes and color overrides apply, and `warn` draws bold where `codeFlag` has no color (`mono`). A figure stays a code block while it streams, when it has more than 80 lines, when it is wider than the window, or when a frame would not close, a side slips out of its column, a glyph may draw as an emoji or takes two columns, or role markup is wrong.
 - The model-only note behind `diagramHints` gains a part on figures: when a picture helps (overlap in time, things to scale, a layout, before and after, an overview) and when it does not, the role markup, at most 74 columns so a figure fits an 80-column window, and the glyphs one column wide; flows, sequences and charts stay mermaid. The note is now about 480 tokens per typed prompt.
+- `figureCheck` (off by default) gives Claude a `check_figure` tool that lists, by line, what would keep a figure from drawing, and asks it to check each figure before it replies. It needs `diagramHints`.
 
 ## [0.15.0] - 2026-10-10
 

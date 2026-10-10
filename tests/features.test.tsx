@@ -2,7 +2,7 @@ import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
 import type { TestBody } from 'claude-code/testing'
 
-import { FIGURE_HINT } from '../hooks/figure'
+import { FIGURE_CHECK_HINT, FIGURE_CHECK_TOOL, FIGURE_HINT } from '../hooks/figure'
 import { parse } from '../hooks/markdown'
 import { PRESET_NAMES, PRESETS } from '../hooks/presets'
 import { RANDOM_THEMES, pickTheme } from '../hooks/theme'
@@ -457,6 +457,54 @@ test('no figure hint when mermaid is off', { options: { mermaid: false } }, asyn
   })
   await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
   expect(seen[0] ?? []).not.toContain(FIGURE_HINT)
+})
+
+const figureCheckRun = async ($: Parameters<TestBody>[0], on: On, answers: ('register' | 'refuse')[]) => {
+  const hinted: boolean[] = []
+  const registered: string[] = []
+  mock.env(on, {})
+  on('tool.register' as never, ((_: unknown, e: { name: string; description: string; inputSchema: Record<string, unknown> }) => {
+    registered.push(e.name)
+    return answers[registered.length - 1] === 'refuse' ? { deny: 'not now' } : { value: { name: e.name, description: e.description, inputSchema: e.inputSchema } }
+  }) as never)
+  on('prompt.submit', (_, e) => {
+    hinted.push((e.context ?? []).includes(FIGURE_CHECK_HINT))
+    expect(e.context ?? []).toContain(FIGURE_HINT)
+    return { text: e.text, context: e.context }
+  })
+  for (const text of ['one', 'two', 'three']) await $.prompt.submit({ text, wait: false, origin: { kind: 'composer' } })
+  return { hinted, registered }
+}
+
+test('with figureCheck on, the check tool is registered once and every prompt asks for the check', { options: { figureCheck: true } }, async ($, on) => {
+  expect(await figureCheckRun($, on, [])).toEqual({ hinted: [true, true, true], registered: [FIGURE_CHECK_TOOL] })
+})
+
+test('a refused registration leaves out the check hint and is tried again on the next prompt', { options: { figureCheck: true } }, async ($, on) => {
+  expect(await figureCheckRun($, on, ['refuse'])).toEqual({ hinted: [false, true, true], registered: [FIGURE_CHECK_TOOL, FIGURE_CHECK_TOOL] })
+})
+
+test('no figure check hint when diagramHints is off', { options: { figureCheck: true, diagramHints: false } }, async ($, on) => {
+  const seen: (readonly string[] | undefined)[] = []
+  mock.env(on, {})
+  on('prompt.submit', (_, e) => {
+    seen.push(e.context)
+    return { text: e.text, context: e.context }
+  })
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  expect(seen[0] ?? []).not.toContain(FIGURE_CHECK_HINT)
+})
+
+test('no figure check hint by default', async ($, on) => {
+  const seen: (readonly string[] | undefined)[] = []
+  mock.env(on, {})
+  on('prompt.submit', (_, e) => {
+    seen.push(e.context)
+    return { text: e.text, context: e.context }
+  })
+  await $.prompt.submit({ text: 'hi', wait: false, origin: { kind: 'composer' } })
+  expect(seen[0] ?? []).toContain(FIGURE_HINT)
+  expect(seen[0] ?? []).not.toContain(FIGURE_CHECK_HINT)
 })
 
 test('a continuation line joins the list item it is indented under', async () => {
