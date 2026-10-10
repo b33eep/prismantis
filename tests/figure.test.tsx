@@ -352,56 +352,68 @@ test('the model checks a figure and reads clean or its findings by line', { opti
 
 test('a figure offers its source and its drawn text as copies', async ($, on) => {
   engine(on)
-  const ui = await $.ui.mount(reply(ROLES))
-  const labels = (await ui.findAll({ type: 'Button' })).map(button => button.props.label)
-  expect(labels).toContain('⧉ source')
-  expect(labels).toContain('⧉ art')
-  await ui.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount(reply(ROLES, surface))
+    const labels = (await ui.findAll({ type: 'Button' })).map(button => button.props.label)
+    expect(labels).toContain('⧉ source')
+    expect(labels).toContain('⧉ art')
+    await ui.unmount()
+  }
 })
 
 test('a figure with a finding stays a code block', async ($, on) => {
   engine(on)
-  const ui = await $.ui.mount(reply(['```figure', '┌────────┐', '│ v1.4.2  │', '└────────┘', '```'].join('\n')))
-  expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
-  await ui.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount(reply(['```figure', '┌────────┐', '│ v1.4.2  │', '└────────┘', '```'].join('\n'), surface))
+    expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+    await ui.unmount()
+  }
 })
 
 test('a figure wider than the terminal stays a code block', async ($, on) => {
   engine(on)
-  const ui = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(70)}}`, '```'].join('\n'), 'terminal', 60))
-  expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
-  await ui.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(70)}}`, '```'].join('\n'), surface, 60))
+    expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+    await ui.unmount()
+  }
 })
 
 test('a figure as wide as the hint allows draws in an 80-column window, one column more does not', async ($, on) => {
   engine(on)
-  const safe = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(FIGURE_SAFE_COLUMNS)}}`, '```'].join('\n'), 'terminal', 80))
-  expect(await safe.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
-  await safe.unmount()
-  const wider = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(FIGURE_SAFE_COLUMNS + 1)}}`, '```'].join('\n'), 'terminal', 80))
-  expect(await wider.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
-  await wider.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const safe = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(FIGURE_SAFE_COLUMNS)}}`, '```'].join('\n'), surface, 80))
+    expect(await safe.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+    await safe.unmount()
+    const wider = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(FIGURE_SAFE_COLUMNS + 1)}}`, '```'].join('\n'), surface, 80))
+    expect(await wider.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+    await wider.unmount()
+  }
 })
 
 test('a figure still streaming stays a code block until its fence closes', async ($, on) => {
   engine(on)
-  const open = await $.ui.mount(reply(['```figure', '{ok:done} a'].join('\n')))
-  expect(await open.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
-  await open.unmount()
-  const closed = await $.ui.mount(reply(['```figure', '{ok:done} a', '```'].join('\n')))
-  expect(await closed.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
-  await closed.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const open = await $.ui.mount(reply(['```figure', '{ok:done} a'].join('\n'), surface))
+    expect(await open.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+    await open.unmount()
+    const closed = await $.ui.mount(reply(['```figure', '{ok:done} a', '```'].join('\n'), surface))
+    expect(await closed.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+    await closed.unmount()
+  }
 })
 
 test(`a figure over ${FIGURE_MAX_LINES} lines stays a code block`, async ($, on) => {
   engine(on)
-  const figure = (count: number) => ['```figure', ...Array.from({ length: count }, (_, i) => `row ${i}`), '```'].join('\n')
-  const long = await $.ui.mount(reply(figure(FIGURE_MAX_LINES + 1)))
-  expect(await long.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
-  await long.unmount()
-  const fits = await $.ui.mount(reply(figure(FIGURE_MAX_LINES)))
-  expect(await fits.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
-  await fits.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const figure = (count: number) => ['```figure', ...Array.from({ length: count }, (_, i) => `row ${i}`), '```'].join('\n')
+    const long = await $.ui.mount(reply(figure(FIGURE_MAX_LINES + 1), surface))
+    expect(await long.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+    await long.unmount()
+    const fits = await $.ui.mount(reply(figure(FIGURE_MAX_LINES), surface))
+    expect(await fits.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+    await fits.unmount()
+  }
 })
 
 const figureBox = async (ui: { findAll: (query: { type: string }) => Promise<{ props: Record<string, unknown>; text?: string; children?: unknown[] }[]> }) =>
@@ -440,17 +452,21 @@ test('a figure keeps a closing tag that does not end its last line, or names no 
 
 test('in a theme without colors, warn draws bold and dim draws dimmed', { options: { theme: 'mono' } }, async ($, on) => {
   engine(on)
-  const ui = await $.ui.mount(reply(ROLES))
-  expect((await ui.find({ type: 'Text', text: /^break$/ }))?.props.bold).toBe(true)
-  expect((await ui.find({ type: 'Text', text: /^aside$/ }))?.props.dimColor).toBe(true)
-  await ui.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount(reply(ROLES, surface))
+    expect((await ui.find({ type: 'Text', text: /^break$/ }))?.props.bold).toBe(true)
+    expect((await ui.find({ type: 'Text', text: /^aside$/ }))?.props.dimColor).toBe(true)
+    await ui.unmount()
+  }
 })
 
 test('blank lines around a figure are not drawn, blank lines inside are', async ($, on) => {
   engine(on)
-  const ui = await $.ui.mount(reply(['```figure', '', '{ok:a}', '', 'b', '', '```'].join('\n')))
-  const figure = await figureBox(ui)
-  expect(figure?.children?.length).toBe(3)
-  expect(figure?.text).toBe('a b')
-  await ui.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount(reply(['```figure', '', '{ok:a}', '', 'b', '', '```'].join('\n'), surface))
+    const figure = await figureBox(ui)
+    expect(figure?.children?.length).toBe(3)
+    expect(figure?.text).toBe('a b')
+    await ui.unmount()
+  }
 })

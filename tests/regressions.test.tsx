@@ -323,6 +323,7 @@ test('the help screen shows every element prismantis draws', async () => {
   expect(showcaseText([]).includes("toolStyle")).toBe(true)
   expect(showcaseText([]).includes("toolOutput")).toBe(true)
   expect(showcaseText([])).toContain('+M more lines')
+  expect(showcaseText([])).toContain('```figure')
   expect(blocks.some(b => b.kind === 'code' && b.lines.length > 30)).toBe(true)
   expect(showcaseText([])).toContain('diff card headed `+N −M`')
 })
