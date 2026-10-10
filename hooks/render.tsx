@@ -468,7 +468,7 @@ const renderAlert = (el: ElementTable, style: Style, block: Extract<Block, { kin
 
 const TASK_GLYPHS = { checks: ['[ ]', '[✓]'], ticks: ['○', '✓'], box: ['□', '✓'], progress: ['○', '✓'] } as const
 
-const renderList = (el: ElementTable, style: Style, block: Extract<Block, { kind: 'list' }>, columns: number, key: string, copy?: CopyButton) => {
+const renderList = (el: ElementTable, style: Style, block: Extract<Block, { kind: 'list' }>, columns: number, key: string, copy?: CopyButton, fold?: Fold) => {
   const { Box, Text } = el
   const t = style.theme
   const tasks = block.items.filter(item => item.task !== undefined)
@@ -509,7 +509,7 @@ const renderList = (el: ElementTable, style: Style, block: Extract<Block, { kind
           <Box key={k} flexDirection="column">
             {line}
             <Box flexDirection="column" {...(rtl?.base === 'R' ? { paddingRight: indent } : { paddingLeft: indent })}>
-              {renderBlocks(el, style, item.blocks, columns - indent, new Map(), nestedCopy)}
+              {renderBlocks(el, style, item.blocks, columns - indent, new Map(), nestedCopy, fold && ((id, hidden, foldKey) => fold(id, hidden, `${k}.${foldKey}`)))}
             </Box>
           </Box>
         )
@@ -577,7 +577,7 @@ export const renderBlocks = (el: ElementTable, style: Style, blocks: Block[], co
         )
       }
       case 'list':
-        return renderList(el, style, block, columns, key, copy)
+        return renderList(el, style, block, columns, key, copy, fold)
       case 'table':
         return renderTable(el, style, block, columns, key, rtlTables[b]!)
       case 'notes':

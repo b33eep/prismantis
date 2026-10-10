@@ -176,7 +176,7 @@ const numberNotes = (blocks: Block[], defs: Map<string, string>, hl: Highlight):
     : 'children' in n ? { ...n, children: fix(n.children) } : n)
   const mapInlines = (b: Block, f: (nodes: Inline[]) => Inline[]): Block =>
     'inline' in b ? { ...b, inline: f(b.inline) }
-    : b.kind === 'list' ? { ...b, items: b.items.map(it => ({ ...it, inline: f(it.inline) })) }
+    : b.kind === 'list' ? { ...b, items: b.items.map(it => ({ ...it, inline: f(it.inline), ...(it.blocks ? { blocks: it.blocks.map(child => mapInlines(child, f)) } : {}) })) }
     : b.kind === 'table' ? { ...b, header: b.header.map(f), rows: b.rows.map(r => r.map(f)) }
     : b
   blocks.forEach(b => mapInlines(b, nodes => (seen(nodes), nodes)))

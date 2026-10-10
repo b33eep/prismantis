@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Fixed
 
-- A fenced code block indented under a list item draws as a code block under that item, with its own copy button, and text after it stays in the item. It used to join the item as one line with its fences showing, and a blank line inside the block ended the list and opened a code block that took the rest of the reply, headings included. Text indented under the item after a blank line stays in the item too, and `/prismantis copy code` finds code inside list items. A mermaid block inside a list item still draws as code.
+- A fenced code block indented under a list item draws as a code block under that item, with its own copy button, and text after it stays in the item. It used to join the item as one line with its fences showing, and a blank line inside the block ended the list and opened a code block that took the rest of the reply, headings included. Text indented under the item after a blank line stays in the item too, `/prismantis copy code` finds code inside list items, and a long code block under an item folds like any other. A mermaid block inside a list item still draws as code.
 
 ## [0.15.0] - 2026-10-10
 

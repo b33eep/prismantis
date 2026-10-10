@@ -476,3 +476,27 @@ test('long code blocks fold to 20 lines, open and fold back on press, and copy e
     await ui.unmount()
   }
 })
+
+test('footnotes in text under a list item are numbered with the rest', async () => {
+  const blocks = parse(['1. Install', '', '   Details[^a] here.', '', 'Then[^b].', '', '[^a]: first', '[^b]: second'].join('\n'), { numbers: false, paths: false })
+  const list = blocks[0]
+  if (list?.kind !== 'list') throw new Error('not a list')
+  const child = list.items[0]?.blocks?.[0]
+  expect(child?.kind === 'paragraph' ? inlineText(child.inline) : '').toBe('Details¹ here.')
+  const after = blocks[1]
+  expect(after?.kind === 'paragraph' ? inlineText(after.inline) : '').toBe('Then².')
+})
+
+test('a long code block under a list item folds with a toggle of its own', async $ => {
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const code = Array.from({ length: 40 }, (_, i) => `   step ${i + 1}`)
+    const ui = await $.ui.mount({ ...draw(['1. Run:', `   ${FENCE}text`, ...code, `   ${FENCE}`].join('\n')), surface })
+    const toggle = (await ui.findAll({ type: 'Button' })).find(button => button.props.label === '+20 more lines')
+    expect(toggle).toBeDefined()
+    expect(toggle?.key).not.toBe('fold0')
+    await ui.press({ key: toggle!.key! })
+    expect((await ui.find({ key: toggle!.key! }))?.props.label).toBe('show less')
+    await ui.press({ key: toggle!.key! })
+    await ui.unmount()
+  }
+})
