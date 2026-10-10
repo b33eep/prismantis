@@ -190,8 +190,12 @@ test('the figure hint sizes the pictures to the question and keeps prose to what
   expect(FIGURE_HINT).toContain('give each a ## heading')
 })
 
-test('the figure hint stays under 1800 characters, about the 570 tokens the README states', () => {
-  expect(FIGURE_HINT.length).toBeLessThanOrEqual(1800)
+test('the figure hint keeps picture, prose and lists to the same steps, numbers and order', () => {
+  expect(FIGURE_HINT).toContain('Where picture, prose and a list cover the same thing, they use the same steps, states, numbers and order.')
+})
+
+test('the figure hint stays under 1850 characters, about the 590 tokens the README states', () => {
+  expect(FIGURE_HINT.length).toBeLessThanOrEqual(1850)
 })
 
 test('every glyph the figure hint offers passes the checker', () => {
@@ -279,6 +283,56 @@ test(`a review finds a figure over ${FIGURE_MAX_LINES} lines, which stays a code
   expect(reviewFigure(long)).toEqual([{ line: FIGURE_MAX_LINES + 1, message: `${FIGURE_MAX_LINES + 1} lines, at most ${FIGURE_MAX_LINES}` }])
 })
 
+const closing = (name: string) => `<${'/'}${name}>`
+
+const SCHEMA = [`{accent:${'─'.repeat(69)}}`, ` Migration  DROP COLUMN name       {warn:no rollback from here}`, ` {strong:Every version runs next to the one before it, on the same schema.}`]
+
+const LAST = SCHEMA.at(-1) ?? ''
+
+const ROWS = Array.from({ length: FIGURE_MAX_LINES }, (_, i) => `row ${i}`)
+
+test('a closing tag of a tool call at the end of the last line is no part of the figure under review', () => {
+  expect(reviewFigure(SCHEMA.join('\n'))).toEqual([])
+  for (const last of [
+    `${LAST}${closing('parameter')}`,
+    `${LAST}${closing('antml:parameter')}`,
+    `${LAST}${closing('function_calls')}`,
+    `${LAST}  ${closing('parameter')}  `,
+    `${LAST}${closing('parameter')}\r`,
+    `${LAST}${closing('parameter')} ${closing('invoke')}`,
+  ]) {
+    const tagged = [...SCHEMA.slice(0, -1), last].join('\n')
+    expect(reviewFigure(tagged)).toEqual([])
+    expect(reviewFigure(['```figure', tagged, '```'].join('\n'))).toEqual([])
+  }
+})
+
+test('closing tags of a tool call on lines of their own at the end are no part of the figure under review', () => {
+  expect(reviewFigure([...ROWS, closing('parameter'), closing('invoke')].join('\n'))).toEqual([])
+  expect(reviewFigure([...SCHEMA.slice(0, -1), `${LAST}${closing('parameter')}`, '', closing('invoke')].join('\n'))).toEqual([])
+})
+
+test('a closing tag anywhere but the end of the last line stays and counts', () => {
+  const wide = 'x'.repeat(FIGURE_SAFE_COLUMNS - 4)
+  const inner = `${wide}${closing('parameter')}`
+  expect(reviewFigure([inner, 'b'].join('\n'))).toEqual([{ line: 1, message: `${width(inner)} columns wide, at most ${FIGURE_SAFE_COLUMNS}` }])
+  const middle = `${closing('parameter')}${wide}`
+  expect(reviewFigure(['a', middle].join('\n'))).toEqual([{ line: 2, message: `${width(middle)} columns wide, at most ${FIGURE_SAFE_COLUMNS}` }])
+  const html = `${wide}${closing('div')}`
+  expect(reviewFigure(html)).toEqual([{ line: 1, message: `${width(html)} columns wide, at most ${FIGURE_SAFE_COLUMNS}` }])
+})
+
+test('a figure that opens the tag it closes keeps the closing tag', () => {
+  const shown = `${'x'.repeat(FIGURE_SAFE_COLUMNS - 4)}${closing('parameter')}`
+  expect(reviewFigure(['<parameter name="figure">', shown].join('\n'))).toEqual([{ line: 2, message: `${width(shown)} columns wide, at most ${FIGURE_SAFE_COLUMNS}` }])
+})
+
+test('a long run of closing tags on the last line is reviewed quickly', () => {
+  const started = Date.now()
+  reviewFigure(`${closing('parameter').repeat(20000)}x`)
+  expect(Date.now() - started).toBeLessThan(500)
+})
+
 test('an empty review asks for the lines of one figure', () => {
   for (const source of ['  \n', '```figure\n```\n', '']) expect(reviewFigure(source)).toEqual([{ line: 1, message: 'no lines, pass the lines of one figure block' }])
 })
@@ -350,6 +404,40 @@ test(`a figure over ${FIGURE_MAX_LINES} lines stays a code block`, async ($, on)
   await fits.unmount()
 })
 
+const figureBox = async (ui: { findAll: (query: { type: string }) => Promise<{ props: Record<string, unknown>; text?: string; children?: unknown[] }[]> }) =>
+  (await ui.findAll({ type: 'Box' })).find(box => box.props.paddingLeft === 2)
+
+test('a figure whose last line ends in a closing tag of a tool call draws without the tag', async ($, on) => {
+  engine(on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    for (const ending of [[`${LAST}${closing('parameter')}`], [LAST, closing('parameter'), closing('invoke')]]) {
+      const ui = await $.ui.mount(reply(['```figure', ...SCHEMA.slice(0, -1), ...ending, '```'].join('\n'), surface, 80))
+      expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+      expect((await figureBox(ui))?.children?.length).toBe(SCHEMA.length)
+      expect((await figureBox(ui))?.text).toContain('on the same schema.')
+      expect((await figureBox(ui))?.text).not.toContain('parameter')
+      await ui.unmount()
+    }
+  }
+})
+
+test('a figure keeps a closing tag that does not end its last line, or names no tool call', async ($, on) => {
+  engine(on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    for (const [figure, kept] of [
+      [[`a${closing('parameter')}`, 'b'], closing('parameter')],
+      [[`${closing('parameter')} a`], closing('parameter')],
+      [[`a ${closing('div')}`], closing('div')],
+      [['<parameter name="a">', `x${closing('parameter')}`], closing('parameter')],
+    ] as const) {
+      const ui = await $.ui.mount(reply(['```figure', ...figure, '```'].join('\n'), surface))
+      expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+      expect((await figureBox(ui))?.text).toContain(kept)
+      await ui.unmount()
+    }
+  }
+})
+
 test('in a theme without colors, warn draws bold and dim draws dimmed', { options: { theme: 'mono' } }, async ($, on) => {
   engine(on)
   const ui = await $.ui.mount(reply(ROLES))
@@ -361,7 +449,7 @@ test('in a theme without colors, warn draws bold and dim draws dimmed', { option
 test('blank lines around a figure are not drawn, blank lines inside are', async ($, on) => {
   engine(on)
   const ui = await $.ui.mount(reply(['```figure', '', '{ok:a}', '', 'b', '', '```'].join('\n')))
-  const figure = (await ui.findAll({ type: 'Box' })).find(box => box.props.paddingLeft === 2)
+  const figure = await figureBox(ui)
   expect(figure?.children?.length).toBe(3)
   expect(figure?.text).toBe('a b')
   await ui.unmount()

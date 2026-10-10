@@ -34,6 +34,7 @@ export const FIGURE_HINT = [
   'In each picture, show what explains the core, not the steps a list would tell: time to scale against a limit, which cases cross a boundary, states side by side, the point of no return; mark numbers you do not know as examples.',
   'Add a picture only when it shows something new, sized to the question: a sketch gets one overview, a migration its plan and its mixed phase. None for short or yes/no answers, code changes, tool results, or what a table shows better.',
   'In a reply with pictures, the prose says only what they do not show (reasons, rules, limits) and never retells them; when it has more than one section, give each a ## heading.',
+  'Where picture, prose and a list cover the same thing, they use the same steps, states, numbers and order.',
   `Every line is drawn as written. Color with {role:text}, not nested: ${FIGURE_ROLES.map(role => `${role} for ${ROLE_USES[role]}`).join('; ')}. Labels in place, no legend, one idea per picture.`,
   `At most ${FIGURE_SAFE_COLUMNS} columns so it fits an 80-column window, glyphs one column wide such as ${FIGURE_GLYPHS}, no emoji, no tabs. Count columns so frames close and vertical lines stay in their column; markup takes no columns, count only the drawn text. A picture with a frame that does not close, a wide glyph, a tab or wrong markup shows as plain code.`,
 ].join(' ')
@@ -170,6 +171,21 @@ const withoutBlankEdges = (lines: readonly string[]): readonly string[] => {
   return start < 0 ? [] : withoutTrailingBlanks(lines.slice(start))
 }
 
+const TOOL_CALL_TAG = '(?:[\\w-]+:)?(?:parameter|invoke|function_calls)'
+const TOOL_CALL_RESIDUE = new RegExp(`(?:<\\/${TOOL_CALL_TAG}>\\s*){1,3}$`)
+const TOOL_CALL_OPENING = new RegExp(`<${TOOL_CALL_TAG}[\\s>]`)
+
+const withoutToolCallResidue = (lines: readonly string[]): readonly string[] => {
+  if (lines.some(line => TOOL_CALL_OPENING.test(line))) return lines
+  let kept = lines
+  for (let last = kept.at(-1); last !== undefined && TOOL_CALL_RESIDUE.test(last); last = kept.at(-1)) {
+    const rest = last.replace(TOOL_CALL_RESIDUE, '').trimEnd()
+    kept = withoutTrailingBlanks([...kept.slice(0, -1), rest])
+    if (rest) break
+  }
+  return kept
+}
+
 const FENCE_OPEN = /^\s*(`{3,}|~{3,})\s*figure(?![\w+-])/i
 
 const withoutFences = (source: readonly string[]): readonly string[] => {
@@ -182,7 +198,7 @@ const withoutFences = (source: readonly string[]): readonly string[] => {
 }
 
 export const reviewFigure = (source: string): FigureFinding[] => {
-  const lines = withoutFences(source.split(/\r?\n/))
+  const lines = withoutToolCallResidue(withoutFences(source.split(/\r?\n/)))
   if (lines.length === 0) return [{ line: 1, message: 'no lines, pass the lines of one figure block' }]
   const tooLong = lines.length > FIGURE_MAX_LINES ? [{ line: FIGURE_MAX_LINES + 1, message: `${lines.length} lines, at most ${FIGURE_MAX_LINES}` }] : []
   return [...checkFigure(lines.slice(0, FIGURE_MAX_LINES), FIGURE_SAFE_COLUMNS), ...tooLong].sort((a, b) => a.line - b.line)
@@ -222,7 +238,7 @@ const figureElement = ({ Box, Text }: ElementTable, style: Style, lines: readonl
 
 export const drawFigure = (el: ElementTable, style: Style, block: { lines: readonly string[]; isOpen?: true }, columns: number, key: string): { element: RenderElement; art: string } | null => {
   if (block.isOpen) return null
-  const lines = withoutBlankEdges(block.lines)
+  const lines = withoutToolCallResidue(withoutBlankEdges(block.lines))
   if (lines.length === 0 || lines.length > FIGURE_MAX_LINES || checkFigure(lines).length > 0) return null
   const texts = lines.map(figureText)
   if (texts.some(text => width(text) > columns - 2)) return null
