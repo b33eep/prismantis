@@ -11,10 +11,12 @@ export type Inline =
   | { kind: 'dim'; text: string }
   | { kind: 'footnote'; text: string }
 
+export type ListItem = { marker: string; depth: number; task?: boolean; inline: Inline[]; blocks?: Block[] }
+
 export type Block = { raw: string } & (
   | { kind: 'heading'; level: number; inline: Inline[] }
   | { kind: 'paragraph'; inline: Inline[] }
-  | { kind: 'list'; ordered: boolean; items: { marker: string; depth: number; task?: boolean; inline: Inline[] }[] }
+  | { kind: 'list'; ordered: boolean; items: ListItem[] }
   | { kind: 'code'; lang: string; lines: string[]; isOpen?: true }
   | { kind: 'quote'; inline: Inline[] }
   | { kind: 'alert'; level: AlertLevel; inline: Inline[] }
@@ -36,6 +38,21 @@ const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
 const FENCE = /^\s*(`{3,}|~{3,})\s*([\w+-]*)/
 const NOTE_DEF = /^\[\^([^\]\s]+)\]:\s*(.*)$/
 const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹'
+
+const fenceCloser = (run: string) => new RegExp(`^\\s*\\${run[0]}{${run.length},}\\s*$`)
+
+const ITEM_FENCE = /^\s*(`{3,}(?=[^`]*$)|~{3,})\s*([\w+-]*)/
+
+const indentOf = (line: string) => (line.match(/^\s*/)?.[0] ?? '').replace(/\t/g, '  ').length
+
+const isIndented = (line: string) => /\S/.test(line) && indentOf(line) >= 2
+
+const withoutIndent = (line: string, indent: number) => {
+  let column = 0
+  let at = 0
+  while (at < line.length && column < indent && (line[at] === ' ' || line[at] === '\t')) column += line[at++] === '\t' ? 2 : 1
+  return line.slice(at)
+}
 
 const splitRow = (line: string): string[] => {
   const trimmed = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '')
@@ -211,7 +228,7 @@ const parseBlocks = (source: string, hl: Highlight): Block[] => {
       flush(i)
       const start = i
       const run = fence[1] ?? '```'
-      const closer = new RegExp(`^\\s*\\${run[0]}{${run.length},}\\s*$`)
+      const closer = fenceCloser(run)
       const body: string[] = []
       i++
       while (i < lines.length && !closer.test(at(i))) body.push(at(i++))
@@ -278,20 +295,70 @@ const parseBlocks = (source: string, hl: Highlight): Block[] => {
       flush(i)
       const start = i
       const ordered = /\d/.test(item[2] ?? '')
-      const items: { marker: string; depth: number; task?: boolean; inline: Inline[] }[] = []
+      const items: ListItem[] = []
       const contentIndent: number[] = []
+      const itemCode = (from: number, fence: RegExpExecArray, indent: number) => {
+        const closer = fenceCloser(fence[1] ?? '```')
+        const body: string[] = []
+        let n = from + 1
+        while (n < lines.length && !closer.test(at(n)) && (at(n).trim() === '' || indentOf(at(n)) >= indent)) body.push(withoutIndent(at(n++), indent))
+        const isClosed = n < lines.length && closer.test(at(n))
+        while (!isClosed && body.length && body.at(-1)!.trim() === '') body.pop()
+        const end = isClosed ? n + 1 : from + 1 + body.length
+        const code: Block = { kind: 'code', lang: fence[2] ?? '', lines: body, ...(n < lines.length ? {} : { isOpen: true as const }), raw: lines.slice(from, end).join('\n') }
+        return { code, end }
+      }
+      let afterBlank = false
       while (i < lines.length) {
         const it = LIST_ITEM.exec(at(i))
         if (it) {
-          contentIndent.push((it[1] ?? '').replace(/\t/g, '  ').length + (it[2] ?? '').length + 1)
+          const indent = (it[1] ?? '').replace(/\t/g, '  ').length
+          contentIndent.push(indent + (it[2] ?? '').length + 1)
+          const depth = Math.floor(indent / 2)
+          const fence = ITEM_FENCE.exec(it[3] ?? '')
+          afterBlank = false
+          if (fence) {
+            const { code, end } = itemCode(i, fence, contentIndent.at(-1)!)
+            items.push({ marker: it[2] ?? '-', depth, inline: [], blocks: [code] })
+            i = end
+            continue
+          }
           const task = /^\[([ xX])\]\s+(.*)$/.exec(it[3] ?? '')
-          items.push({ marker: it[2] ?? '-', depth: Math.floor((it[1] ?? '').replace(/\t/g, '  ').length / 2), ...(task ? { task: task[1] !== ' ' } : {}), inline: parseInline(task ? task[2]! : it[3] ?? '', hl) })
-        } else if (/^\s{2,}\S/.test(at(i)) && items.length) {
-          const indent = (at(i).match(/^\s*/)?.[0] ?? '').replace(/\t/g, '  ').length
-          let owner = items.length - 1
-          while (owner > 0 && contentIndent[owner]! > indent) owner--
-          const target = items[owner]!
-          target.inline = [...target.inline, { kind: 'text', text: ' ' }, ...parseInline(at(i).trim(), hl)]
+          items.push({ marker: it[2] ?? '-', depth, ...(task ? { task: task[1] !== ' ' } : {}), inline: parseInline(task ? task[2]! : it[3] ?? '', hl) })
+        } else if (isIndented(at(i)) && items.length) {
+          const indent = indentOf(at(i))
+          const holder = items.at(-1)!
+          const children = holder.blocks ?? []
+          const fence = ITEM_FENCE.exec(at(i))
+          if (fence) {
+            const { code, end } = itemCode(i, fence, indent)
+            holder.blocks = [...children, code]
+            afterBlank = false
+            i = end
+            continue
+          }
+          const last = children.at(-1)
+          const text = parseInline(at(i).trim(), hl)
+          if (last?.kind === 'paragraph' && !afterBlank) {
+            holder.blocks = [...children.slice(0, -1), { ...last, inline: [...last.inline, { kind: 'text', text: ' ' }, ...text], raw: `${last.raw}\n${at(i)}` }]
+          } else if (last || afterBlank) {
+            holder.blocks = [...children, { kind: 'paragraph', inline: text, raw: at(i) }]
+          } else {
+            let owner = items.length - 1
+            while (owner > 0 && contentIndent[owner]! > indent) owner--
+            const target = items[owner]!
+            target.inline = [...target.inline, { kind: 'text', text: ' ' }, ...text]
+          }
+          afterBlank = false
+        } else if (at(i).trim() === '' && items.length) {
+          let next = i + 1
+          while (next < lines.length && at(next).trim() === '') next++
+          const following = at(next)
+          const staysInItem = isIndented(following) && !LIST_ITEM.test(following) && (ITEM_FENCE.test(following) || indentOf(following) >= contentIndent.at(-1)!)
+          if (!staysInItem) break
+          afterBlank = true
+          i = next
+          continue
         } else {
           break
         }

@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { parse } from '../hooks/markdown'
+import { inlineText, parse } from '../hooks/markdown'
 import { PRESETS } from '../hooks/presets'
 import { resolveStyle } from '../hooks/theme'
 
@@ -170,6 +170,139 @@ test('bullets nested under a numbered list draw as bullets', async $ => {
   expect(await ui.find({ type: 'Text', text: /^- $/ })).toBeUndefined()
   await ui.unmount()
 })
+
+const FENCE = '```'
+
+const listOf = (text: string) => {
+  const blocks = parse(text, { numbers: false, paths: false })
+  const list = blocks[0]
+  if (list?.kind !== 'list') throw new Error('not a list')
+  return { list, kinds: blocks.map(b => b.kind) }
+}
+
+const childrenOf = (item: { blocks?: { kind: string; lang?: string; lines?: string[] }[] } | undefined) =>
+  (item?.blocks ?? []).map(b => (b.kind === 'code' ? { kind: b.kind, lang: b.lang, lines: b.lines } : { kind: b.kind }))
+
+test('a fenced block indented under a list item belongs to that item, the text after it too', async () => {
+  const { list, kinds } = listOf(['1. Setup:', `   ${FENCE}bash`, '   npm i', `   ${FENCE}`, '   Then build.', '   And ship.', '2. Next'].join('\n'))
+  expect(kinds).toEqual(['list'])
+  expect(list.items.map(item => inlineText(item.inline))).toEqual(['Setup:', 'Next'])
+  expect(childrenOf(list.items[0])).toEqual([{ kind: 'code', lang: 'bash', lines: ['npm i'] }, { kind: 'paragraph' }])
+  const after = list.items[0]?.blocks?.[1]
+  expect(after?.kind === 'paragraph' ? inlineText(after.inline) : '').toBe('Then build. And ship.')
+})
+
+test('a blank line inside a code block in a list item keeps the rest of the reply out of the code', async () => {
+  const blocks = parse(['1. Setup:', `   ${FENCE}bash`, '   a', '', '   b', `   ${FENCE}`, '2. Next', '', '## Phase 3', 'text'].join('\n'), { numbers: false, paths: false })
+  expect(blocks.map(b => b.kind)).toEqual(['list', 'heading', 'paragraph'])
+  const list = blocks[0]
+  if (list?.kind !== 'list') throw new Error('not a list')
+  expect(list.items.length).toBe(2)
+  expect(childrenOf(list.items[0])).toEqual([{ kind: 'code', lang: 'bash', lines: ['a', '', 'b'] }])
+})
+
+test('a fenced block after a blank line under a list item belongs to the item, without its indent', async () => {
+  const { list } = listOf(['1. Setup:', '', `   ${FENCE}sql`, '   SELECT 1;', '     FROM t;', `   ${FENCE}`, '', '2. Next'].join('\n'))
+  expect(childrenOf(list.items[0])).toEqual([{ kind: 'code', lang: 'sql', lines: ['SELECT 1;', '  FROM t;'] }])
+})
+
+test('a tilde fence under a bullet and a fence under a nested bullet belong to their item', async () => {
+  const { list } = listOf(['- Item', '  ~~~js', '  x()', '  ~~~', '- Two', '  - Inner', `    ${FENCE}sh`, '    y', `    ${FENCE}`].join('\n'))
+  expect(list.items.map(item => childrenOf(item))).toEqual([[{ kind: 'code', lang: 'js', lines: ['x()'] }], [], [{ kind: 'code', lang: 'sh', lines: ['y'] }]])
+})
+
+test('a fence that is not indented ends the list', async () => {
+  for (const gap of [[], ['']]) {
+    const { list, kinds } = listOf(['- Item', ...gap, `${FENCE}js`, 'x()', FENCE].join('\n'))
+    expect(kinds).toEqual(['list', 'code'])
+    expect(childrenOf(list.items[0])).toEqual([])
+    expect(list.raw).toBe('- Item')
+  }
+})
+
+test('a code block in a list item stays open while it streams', async () => {
+  const { list } = listOf(['- Item', `  ${FENCE}js`, '  x()'].join('\n'))
+  const code = list.items[0]?.blocks?.[0]
+  expect(code?.kind === 'code' && code.isOpen).toBe(true)
+})
+
+test('a fence on the item line opens the item code, and the next item still follows', async () => {
+  const blocks = parse(['1. ```bash', '   npm i', '   ```', '2. Next', '', '## Heading'].join('\n'), { numbers: false, paths: false })
+  expect(blocks.map(b => b.kind)).toEqual(['list', 'heading'])
+  const list = blocks[0]
+  if (list?.kind !== 'list') throw new Error('not a list')
+  expect(list.items.map(item => inlineText(item.inline))).toEqual(['', 'Next'])
+  expect(childrenOf(list.items[0])).toEqual([{ kind: 'code', lang: 'bash', lines: ['npm i'] }])
+})
+
+test('inline code that starts a continuation line is no fence', async () => {
+  const { list } = listOf(['1. Run', '   ```npm i``` first', '2. Next'].join('\n'))
+  expect(list.items.map(item => inlineText(item.inline))).toEqual(['Run npm i first', 'Next'])
+  expect(childrenOf(list.items[0])).toEqual([])
+})
+
+test('code in a list item ends where the item ends, even without its closing fence', async () => {
+  const blocks = parse(['1. Setup', `   ${FENCE}bash`, '   npm i', '2. Next', '', '## Heading'].join('\n'), { numbers: false, paths: false })
+  expect(blocks.map(b => b.kind)).toEqual(['list', 'heading'])
+  const list = blocks[0]
+  if (list?.kind !== 'list') throw new Error('not a list')
+  expect(list.items.length).toBe(2)
+  expect(childrenOf(list.items[0])).toEqual([{ kind: 'code', lang: 'bash', lines: ['npm i'] }])
+  const code = list.items[0]?.blocks?.[0]
+  expect(code?.kind === 'code' && code.isOpen).toBeUndefined()
+  const gap = listOf(['1. Setup', `   ${FENCE}bash`, '   npm i', '', '2. Next'].join('\n')).list
+  expect(childrenOf(gap.items[0])).toEqual([{ kind: 'code', lang: 'bash', lines: ['npm i'] }])
+  const closed = listOf(['- a', `  ${FENCE}js`, '  x', FENCE, '- b'].join('\n')).list
+  expect(closed.items.length).toBe(2)
+  expect(childrenOf(closed.items[0])).toEqual([{ kind: 'code', lang: 'js', lines: ['x'] }])
+})
+
+test('text indented under an item after a blank line stays in the item', async () => {
+  const { list } = listOf(['1. Install:', '', `   ${FENCE}sh`, '   npm i', `   ${FENCE}`, '', '   Then build.', '', '2. Build:'].join('\n'))
+  expect(childrenOf(list.items[0])).toEqual([{ kind: 'code', lang: 'sh', lines: ['npm i'] }, { kind: 'paragraph' }])
+  const after = list.items[0]?.blocks?.[1]
+  expect(after?.kind === 'paragraph' ? inlineText(after.inline) : '').toBe('Then build.')
+  const plain = listOf(['1. Install', '', '   Then build.'].join('\n')).list
+  expect(inlineText(plain.items[0]?.inline ?? [])).toBe('Install')
+  expect(childrenOf(plain.items[0])).toEqual([{ kind: 'paragraph' }])
+})
+
+test('a nested bullet after a blank line still starts a list of its own', async () => {
+  expect(listOf(['- a', '', '  - b'].join('\n')).kinds).toEqual(['list', 'list'])
+})
+
+test('code at the parent indent after a nested bullet draws after that bullet', async () => {
+  const { list } = listOf(['- Step one', '  - detail', `  ${FENCE}sh`, '  run', `  ${FENCE}`, '- Step two'].join('\n'))
+  expect(list.items.map(item => childrenOf(item))).toEqual([[], [{ kind: 'code', lang: 'sh', lines: ['run'] }], []])
+})
+
+test('fences indented with tabs belong to the item and lose their indent', async () => {
+  for (const tabs of ['\t', '\t\t']) {
+    const { list } = listOf(['- a', `${tabs}${FENCE}js`, `${tabs}x`, `${tabs}${FENCE}`].join('\n'))
+    expect(childrenOf(list.items[0])).toEqual([{ kind: 'code', lang: 'js', lines: ['x'] }])
+  }
+})
+
+for (const surface of ['terminal', 'desktop'] as const) {
+  test(`a code block in a list item draws as code under the item on ${surface}`, async ($, on) => {
+    const copied: string[] = []
+    on('ui.copy', (_, e) => {
+      copied.push(e.text)
+      return { value: { isCopied: true as const } }
+    })
+    const ui = await $.ui.mount({ ...draw(['1. Setup:', `   ${FENCE}bash`, '   npm i', `   ${FENCE}`, '   Then build.', '2. Next'].join('\n')), surface })
+    expect(await ui.find({ type: 'Text', text: /^── bash$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /```/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^Then build\.$/ })).toBeDefined()
+    const nested = (await ui.findAll({ type: 'Box' })).find(box => box.props.paddingLeft === 3)
+    expect(nested?.text).toContain('npm i')
+    const buttons = await ui.findAll({ type: 'Button' })
+    const code = buttons.find(button => button.key !== undefined && /copy\d+$/.test(button.key) && button.key.includes('.'))
+    await ui.press({ key: code!.key! })
+    expect(copied).toEqual(['npm i'])
+    await ui.unmount()
+  })
+}
 
 test('a single-series bar chart highlights the tallest bar and mutes the rest', async $ => {
   const chart = '```mermaid\nxychart-beta\n  x-axis [Mon, Tue, Wed]\n  y-axis 0 --> 9\n  bar [3, 7, 5]\n```'

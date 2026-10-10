@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- A fenced code block indented under a list item draws as a code block under that item, with its own copy button, and text after it stays in the item. It used to join the item as one line with its fences showing, and a blank line inside the block ended the list and opened a code block that took the rest of the reply, headings included. Text indented under the item after a blank line stays in the item too, and `/prismantis copy code` finds code inside list items. A mermaid block inside a list item still draws as code.
+
 ## [0.15.0] - 2026-10-10
 
 ### Added

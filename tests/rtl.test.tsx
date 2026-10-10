@@ -115,6 +115,13 @@ test('bullets move to the right end and ordered items keep their number', { opti
   await ui.unmount()
 })
 
+test('code under a right-to-left item lines up with the item text', { options: { rtl: 'warp' } }, async $ => {
+  const ui = await $.ui.mount(mount('- שלום\n  ```sh\n  ls\n  ```'))
+  const nested = (await ui.findAll({ type: 'Box' })).find(b => b.props.paddingRight === 2)
+  expect(nested?.text).toContain('ls')
+  await ui.unmount()
+})
+
 test('an English list keeps the left bullet', { options: { rtl: 'warp' } }, async $ => {
   const ui = await $.ui.mount(mount('- hello\n- world'))
   expect((await ui.findAll({ type: 'Text', text: /^• $/ })).length).toBe(2)
