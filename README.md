@@ -142,6 +142,7 @@ Booked    0                 {ok:1}               {warn:2} twice
 - ▶ and ◀ draw as ► and ◄, as in diagrams, so no glyph turns into an emoji; in `mono`, `warn` draws bold
 - a figure stays a code block while it streams, when it has more than 80 lines, when a line is wider than the window or than 100 columns, and when it would not draw cleanly: a frame that does not close or whose side slips out of its column, a glyph that may draw as an emoji or takes two columns, a tab, or role markup in the wrong case, misspelled, nested or left open
 - `⧉ source` copies the block, `⧉ art` the drawn text
+- Claude learns about figures from the [diagram hints](#diagram-hints) note: when a picture helps, the roles, the width and the glyphs that draw cleanly; flows, sequences and charts stay mermaid
 
 ### LaTeX math
 
@@ -219,9 +220,9 @@ Output from slash commands, built-in or from other plugins, is drawn like a repl
 
 ### Diagram hints
 
-Claude rarely writes a chart unless it knows the terminal can draw one. With `diagramHints` on (the default), each prompt you type carries a short note that only the model reads. It says tables, alerts, code, mermaid diagrams and `xychart-beta` charts render here, and asks for commands in fenced blocks, since only those get a copy button.
+Claude rarely writes a chart unless it knows the terminal can draw one. With `diagramHints` on (the default), each prompt you type carries a short note that only the model reads. It says tables, alerts, code, mermaid diagrams and `xychart-beta` charts render here, and asks for commands in fenced blocks, since only those get a copy button. A second part describes [figures](#figures): when one helps and when it does not, the role markup, at most 74 columns so a figure fits an 80-column window, and the glyphs one column wide.
 
-The note costs about 190 tokens per prompt, and about 60 more while [LaTeX math](#latex-math) is on, when it also says `$$` formulas render. It's off whenever `mermaid` is off, and skipped for headless `claude -p` runs and background notifications.
+The note costs about 190 tokens per prompt, about 290 more for the figure part, and about 60 more while [LaTeX math](#latex-math) is on, when it also says `$$` formulas render. It's off whenever `mermaid` is off, and skipped for headless `claude -p` runs and background notifications.
 
 ### Text
 
@@ -351,7 +352,7 @@ To change the code, read [AGENTS.md](AGENTS.md) instead.
 - **What it is:** a Claude Code mod (function hooks in TypeScript) that redraws assistant replies, slash-command output, tool rows, the turn footer and user prompts. It changes how things look. The one thing it sends the model is the optional diagram hint below.
 - **Install:** `/plugin marketplace add NahumLitvin/prismantis`, then `/plugin install prismantis@prismantis`. Needs Claude Code 2.1.287+. Changes apply after `/reload`.
 - **Configure:** `/prismantis theme <name>` is the only setter at runtime. Every other option is a key under `pluginConfigs["prismantis@prismantis"].options` in `~/.claude/settings.json` (or a row in `/config`), then `/reload`. Options and defaults are in the [Configure](#configure) table; the machine-readable source is `userConfig` in [.claude-plugin/plugin.json](.claude-plugin/plugin.json). Color values that don't parse are ignored.
-- **Side effects:** no network. Programs it runs: the `⧉ html` clipboard helper (`/usr/bin/osascript` on macOS, `copyq` on Linux, 5 second timeout, only on a click), and `ratex-render` while `latex` is on. With `diagramHints` on, it adds about 190 tokens of model-only context to each typed prompt.
+- **Side effects:** no network. Programs it runs: the `⧉ html` clipboard helper (`/usr/bin/osascript` on macOS, `copyq` on Linux, 5 second timeout, only on a click), and `ratex-render` while `latex` is on. With `diagramHints` on, it adds about 480 tokens of model-only context to each typed prompt.
 - **Turning it off:** `"enabled": false`, or disable the plugin in `/plugin`.
 - **For other mods:** `$.prismantis.markdown({ surface, text, columns })`, typed in [types/index.d.ts](types/index.d.ts). See [Other mods](#other-mods).
 

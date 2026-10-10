@@ -15,6 +15,28 @@ export const FIGURE_MAX_COLUMNS = 100
 
 export const FIGURE_MAX_LINES = 80
 
+export const FIGURE_SAFE_COLUMNS = 74
+
+export const FIGURE_GLYPHS = '─│┌┐└┘├┤┬┴┼═║→←►◄▲▼✓✗●○■□·'
+
+const ROLE_USES: Record<FigureRole, string> = {
+  accent: 'frames, lines and arrows',
+  warn: 'the break or risk',
+  ok: 'healthy or done',
+  note: 'time and effort',
+  dim: 'side notes',
+  strong: 'the one thing that matters',
+}
+
+export const FIGURE_HINT = [
+  'A fenced block whose opening line is exactly ```figure is drawn as a text picture.',
+  'Draw one when text tells the core of a reply badly: events that overlap in time or need to be seen to scale (a timeout, a race, versions side by side), a layout, before and after, or an overview of the whole answer; flows, sequences and charts stay mermaid.',
+  'Place it right after the sentence it shows and the first picture on the first screen; at most two per reply, none for side points, for what a table already shows, or in short answers.',
+  `Every line is drawn as written. Color with {role:text}, not nested: ${FIGURE_ROLES.map(role => `${role} for ${ROLE_USES[role]}`).join('; ')}.`,
+  'One idea per picture, labels in place, no legend.',
+  `At most ${FIGURE_SAFE_COLUMNS} columns so it fits an 80-column window, glyphs one column wide such as ${FIGURE_GLYPHS}, no emoji, no tabs. Count columns so frames close and vertical lines stay in their column; markup takes no columns, count only the drawn text. A picture with a frame that does not close, a wide glyph, a tab or wrong markup shows as plain code.`,
+].join(' ')
+
 const MARKUP = new RegExp(`\\{(${FIGURE_ROLES.join('|')}):([^{}]*)\\}`, 'g')
 const MARKER = /\{([A-Za-z][\w-]*):/g
 const TEXT_FORMS: Record<string, string> = { '▶': '►', '◀': '◄' }

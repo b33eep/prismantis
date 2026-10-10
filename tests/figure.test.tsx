@@ -1,8 +1,9 @@
 import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
-import { FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, checkFigure, figureRuns, figureText, isFigureLang } from '../hooks/figure'
+import { FIGURE_GLYPHS, FIGURE_HINT, FIGURE_MAX_COLUMNS, FIGURE_MAX_LINES, FIGURE_ROLES, FIGURE_SAFE_COLUMNS, checkFigure, figureRuns, figureText, isFigureLang } from '../hooks/figure'
 import { PRESETS } from '../hooks/presets'
+import { width } from '../hooks/render'
 
 const lines = (text: string) => text.split('\n')
 
@@ -166,6 +167,26 @@ test('blank lines after a picture do not open its boxes', () => {
   expect(checkFigure(['┌────┐', '│ a  │', '', ''])).toEqual([{ line: 2, message: 'box from line 1 does not close on its left side' }])
 })
 
+test('the figure hint names the opening line, every role, the width and one-column glyphs', () => {
+  expect(FIGURE_HINT).toContain('opening line is exactly ```figure')
+  for (const role of FIGURE_ROLES) expect(FIGURE_HINT).toContain(`${role} for `)
+  expect(FIGURE_HINT).toContain(`At most ${FIGURE_SAFE_COLUMNS} columns`)
+  expect(FIGURE_HINT).toContain(`glyphs one column wide such as ${FIGURE_GLYPHS}`)
+  expect(FIGURE_HINT).toContain('markup takes no columns')
+})
+
+test('the figure hint says when a picture helps, when it does not, and leaves flows to mermaid', () => {
+  expect(FIGURE_HINT).toContain('overlap in time')
+  expect(FIGURE_HINT).toContain('none for side points')
+  expect(FIGURE_HINT).toContain('flows, sequences and charts stay mermaid')
+})
+
+test('every glyph the figure hint offers passes the checker', () => {
+  expect([...FIGURE_GLYPHS].length).toBeGreaterThan(20)
+  expect([...FIGURE_GLYPHS].every(glyph => width(glyph) === 1)).toBe(true)
+  expect(checkFigure([[...FIGURE_GLYPHS].join(' ')])).toEqual([])
+})
+
 test('findings come sorted by line', () => {
   const findings = checkFigure(lines('┌────┐\n│ a   │\n└────┘\n⚠'))
   expect(findings.map(finding => finding.line)).toEqual([2, 4])
@@ -229,6 +250,16 @@ test('a figure wider than the terminal stays a code block', async ($, on) => {
   const ui = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(70)}}`, '```'].join('\n'), 'terminal', 60))
   expect(await ui.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('a figure as wide as the hint allows draws in an 80-column window, one column more does not', async ($, on) => {
+  engine(on)
+  const safe = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(FIGURE_SAFE_COLUMNS)}}`, '```'].join('\n'), 'terminal', 80))
+  expect(await safe.find({ type: 'Text', text: /^── figure$/ })).toBeUndefined()
+  await safe.unmount()
+  const wider = await $.ui.mount(reply(['```figure', `{accent:${'─'.repeat(FIGURE_SAFE_COLUMNS + 1)}}`, '```'].join('\n'), 'terminal', 80))
+  expect(await wider.find({ type: 'Text', text: /^── figure$/ })).toBeDefined()
+  await wider.unmount()
 })
 
 test('a figure still streaming stays a code block until its fence closes', async ($, on) => {

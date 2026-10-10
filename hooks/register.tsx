@@ -7,7 +7,7 @@ import type { Block } from './markdown'
 import { parse } from './markdown'
 import type { ClipboardBackend } from './clipboard'
 import { clipboardCommand } from './clipboard'
-import { drawFigure, isFigureLang } from './figure'
+import { FIGURE_HINT, drawFigure, isFigureLang } from './figure'
 import { boxArt, mermaidText, shortenEdgeLabels, unsupportedKind } from './mermaid'
 import type { Drawn, Fold } from './render'
 import { isReadOnlyCall, remember, rememberCall, renderBlocks, renderDiffCard, renderExpandedShell, renderFailure, renderShellResult, renderToolGroup, renderToolRow, renderTurnDuration, renderUserPrompt, width } from './render'
@@ -364,7 +364,7 @@ export const register: Register = (on, options) => {
     terminal = await probe($, style, probes)
     if (!style.diagramHints || (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge')) return next(e)
     void latexEngine($, latex)
-    const hints = latex.ready && !latex.stopped ? [HINT, LATEX_HINT] : [HINT]
+    const hints = [HINT, FIGURE_HINT, ...(latex.ready && !latex.stopped ? [LATEX_HINT] : [])]
     return next({ ...e, context: [...(e.context ?? []), ...hints] })
   })
 
